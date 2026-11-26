@@ -1,11 +1,25 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-swift build -c release --product KeyOops
-bin=$(swift build -c release --show-bin-path)
-bundle=dist/KeyOops.app
+bundle=${KEYOOPS_BUNDLE_OUTPUT:-dist/KeyOops.app}
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-cp "$bin/KeyOops" "$bundle/Contents/MacOS/"
+case "${1:-}" in
+    --universal)
+        for arch in arm64 x86_64; do
+            swift build --arch "$arch" -c release --product KeyOops
+        done
+        arm=$(swift build --arch arm64 -c release --show-bin-path)
+        intel=$(swift build --arch x86_64 -c release --show-bin-path)
+        lipo -create "$arm/KeyOops" "$intel/KeyOops" -output "$bundle/Contents/MacOS/KeyOops"
+        lipo "$bundle/Contents/MacOS/KeyOops" -verify_arch arm64 x86_64
+        ;;
+    "")
+        swift build -c release --product KeyOops
+        bin=$(swift build -c release --show-bin-path)
+        cp "$bin/KeyOops" "$bundle/Contents/MacOS/"
+        ;;
+    *) echo "Usage: $0 [--universal]" >&2; exit 2 ;;
+esac
 cp Resources/Info.plist "$bundle/Contents/"
 cp Sources/KeyOopsCore/Data/*.bin "$bundle/Contents/Resources/"
 cp -R Licenses "$bundle/Contents/Resources/"
