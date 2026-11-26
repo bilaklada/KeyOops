@@ -56,4 +56,6 @@ try check("Pending space", CompletedWord.read(suffix: "ghbdtn", startsAtDocument
 try check("Double space", CompletedWord.read(suffix: "hello  ", startsAtDocumentBeginning: true) == nil)
 try check("Initials stay manual", WordEvidence.evaluate("GHBDTN", candidate: "ПРИВЕТ", source: .english) == .suggest)
 try check("Short suggestion", WordEvidence.evaluate("vbh", candidate: "мир", source: .english) == .suggest)
+try check("Russian letter on comma key", WordEvidence.evaluate(",skj", candidate: "было", source: .english) == .suggest)
+try check("Punctuated English is protected", WordEvidence.evaluate("he.", candidate: "рую", source: .english) == .keep)
 print("Core checks passed.")

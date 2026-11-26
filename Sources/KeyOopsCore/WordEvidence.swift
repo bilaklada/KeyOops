@@ -16,10 +16,19 @@ public enum WordEvidence {
     }()
 
     public static func evaluate(_ text: String, candidate: String, source: LayoutLanguage) -> Decision {
-        guard text.count >= 3, text.count <= 48, text.allSatisfy(\.isLetter),
+        guard text.count >= 3, text.count <= CompletedWord.maximumUTF16Length,
               candidate.allSatisfy(\.isLetter), candidate.count == text.count,
               let original = dictionaries[source], let target = dictionaries[source.opposite],
               !original.contains(text), target.contains(candidate) else { return .keep }
+        if !text.allSatisfy(\.isLetter) {
+            // ABC punctuation keys can represent letters on Russian (for example ,skj → было).
+            // Keep actual words with punctuation, identifiers and URLs out of suggestions.
+            let letterKeys = ",.[];'`<>{}:\"~"
+            guard source == .english, text.allSatisfy({ $0.isLetter || letterKeys.contains($0) }),
+                  !text.split(whereSeparator: { !$0.isLetter }).contains(where: { original.contains(String($0)) })
+            else { return .keep }
+            return .suggest
+        }
         let ordinaryCase = text == text.lowercased() || String(text.prefix(1)).uppercased() + text.dropFirst().lowercased() == text
         let frequent = target.isCore(candidate) || Assessment.suggests(original: text, candidate: candidate, source: source)
         return frequent && ordinaryCase && text.count >= 4 ? .automatic : .suggest
