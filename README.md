@@ -4,7 +4,7 @@ KeyOops corrects English–Russian keyboard layout mistakes in selected text on 
 
 ## Download the beta
 
-[Get the universal macOS disk image](https://github.com/bilaklada/KeyOops/releases/tag/v0.2.0-beta.2) for macOS 14 or later. Open the DMG, drag KeyOops to Applications and launch it. The download runs on Intel and Apple silicon without a compiler. The beta uses an ad-hoc signature. See [first launch and beta limitations](docs/releases/0.2.0-beta.2.md).
+[Get the universal macOS disk image](https://github.com/bilaklada/KeyOops/releases/tag/v0.2.0-beta.3) for macOS 14 or later. Open the DMG, drag KeyOops to Applications and launch it. The download runs on Intel and Apple silicon without a compiler. The beta uses an ad-hoc signature. See [first launch and beta limitations](docs/releases/0.2.0-beta.3.md).
 
 ## Build and use
 
@@ -23,7 +23,7 @@ The selection Service previews every replacement. Its label uses a small common-
 
 ## While typing
 
-From the menu bar choose **Suggest** or **Automatic**, grant Accessibility and Input Monitoring to the installed app when prompted, then choose the mode again. While typing in TextEdit or Notes, Space triggers a check of the preceding word. In Suggest mode the menu bar indicates when a correction is available. Accept or dismiss it from the menu. Automatic mode applies high-confidence candidates and offers undo in the menu. Continue typing, moving the caret or switching apps can invalidate a pending edit. Live mode starts Off on each launch.
+From the menu bar choose **Suggest** or **Automatic**, grant Accessibility and Input Monitoring to the installed app when prompted, then choose the mode again. While typing in TextEdit or Notes, Space checks the preceding word and up to three neighbors for a consistent layout mistake. A lone ambiguous key such as z stays as typed. In Suggest mode the menu bar indicates when a correction is available. Open the menu to see the proposed replacement, then accept or dismiss it. Automatic mode applies high-confidence candidates and offers undo in the menu. Continue typing, moving the caret or switching apps can invalidate a pending edit. Live mode starts Off on each launch.
 
 Only these two editors are enabled for live checks. Compatibility varies by text control. The selection Service remains available in other apps that support macOS Services. After a successful live correction KeyOops switches to the target layout if the original layout is still active. Undo attempts to restore it. The selection Service leaves the layout alone.
 

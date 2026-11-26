@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.0-beta.3
+
+- Use adjacent words as evidence for English–Russian corrections. Recover short pronouns and prepositions in context and keep ambiguous single keys unchanged.
+- Show the proposed wording when opening the live suggestion menu. Honor a dismissal or undo when looking back from the next word.
+
 ## 0.2.0-beta.2
 
 ### Fixed
