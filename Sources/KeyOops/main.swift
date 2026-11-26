@@ -46,7 +46,7 @@ import SelectionService
     }
 
     @objc private func accept() { live.accept() }
-    @objc private func dismiss() { live.clear() }
+    @objc private func dismiss() { live.dismiss() }
     @objc private func undo() { live.undoLast() }
     @objc private func changeMode(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String,

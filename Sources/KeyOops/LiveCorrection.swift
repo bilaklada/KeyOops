@@ -76,6 +76,9 @@ import MacLayouts
     private var monitor: Any?
     private var pending: GuardedEdit?
     private var undo: GuardedEdit?
+    private var editEnd: (editor: Editor, offset: Int)?
+    // Only the field identity and UTF-16 offset survive a dismissal or undo.
+    private var ignoredThrough: (editor: Editor, offset: Int)?
     private var switchedLayout = false
     private var expiry: Task<Void, Never>?
     private var boundary: Task<Void, Never>?
@@ -83,11 +86,11 @@ import MacLayouts
     var canUndo: Bool { undo != nil }
 
     init() {
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(clear),
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(resetContext),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(clear),
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(resetContext),
             name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(clear),
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(resetContext),
             name: NSWorkspace.willSleepNotification, object: nil)
     }
 
@@ -95,7 +98,7 @@ import MacLayouts
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         mode = .off
-        clear()
+        resetContext()
         guard next != .off else { return }
         guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": prompt] as CFDictionary),
               CGPreflightListenEventAccess() || (prompt && CGRequestListenEventAccess()) else {
@@ -125,7 +128,18 @@ import MacLayouts
         clear()
     }
 
-    @objc func clear() {
+    @objc private func resetContext() {
+        ignoredThrough = nil
+        clear()
+    }
+
+    func dismiss() {
+        ignoredThrough = editEnd
+        clear()
+    }
+
+    private func clear() {
+        editEnd = nil
         expiry?.cancel()
         boundary?.cancel()
         pending = nil
@@ -137,19 +151,25 @@ import MacLayouts
 
     private func inspect(_ editor: Editor) {
         guard let caret = editor.selection, caret.length == 0, caret.location > 1 else { return }
-        let length = min(CompletedWord.inspectionLength, caret.location)
+        var floor = 0
+        if let ignoredThrough, CFEqual(ignoredThrough.editor.element, editor.element),
+           ignoredThrough.editor.pid == editor.pid, ignoredThrough.offset <= caret.location {
+            floor = ignoredThrough.offset
+        } else {
+            ignoredThrough = nil
+        }
+        let length = min(LayoutProposal.inspectionLength, caret.location - floor)
+        guard length > 1 else { return }
         guard let suffix = editor.text(CFRange(location: caret.location - length, length: length)),
-              let original = CompletedWord.read(suffix: suffix, startsAtDocumentBeginning: caret.location == length)
-        else { return }
-        guard let language = try? LayoutLanguage.reading(original), let pair = try? SystemLayouts.pair() else { return }
-        let (from, to) = language == .english ? (pair.english, pair.russian) : (pair.russian, pair.english)
-        guard let candidate = try? from.convert(original, to: to) else { return }
-        let evidence = WordEvidence.evaluate(original, candidate: candidate, source: language)
-        guard evidence != .keep else { return }
+              let pair = try? SystemLayouts.pair(),
+              let proposal = LayoutProposal.ending(in: suffix, atDocumentStart: caret.location - floor == length,
+                                                   english: pair.english, russian: pair.russian) else { return }
         clear()
-        let edit = GuardedEdit(editor: editor, language: language, start: caret.location - original.utf16.count - 1,
-                        original: original + " ", replacement: candidate + " ")
-        if mode == .automatic && evidence == .automatic {
+        editEnd = (editor, caret.location)
+        let edit = GuardedEdit(editor: editor, language: proposal.language,
+                               start: caret.location - proposal.original.utf16.count - 1,
+                               original: proposal.original + " ", replacement: proposal.replacement + " ")
+        if mode == .automatic && proposal.decision == .automatic {
             guard edit.apply() else { return }
             switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
             undo = edit.reversed
@@ -164,8 +184,10 @@ import MacLayouts
 
     func accept() {
         guard let edit = pending else { return }
+        let end = editEnd
         clear()
         if edit.apply() {
+            editEnd = end
             switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
             undo = edit.reversed
             status = "Layout corrected · Undo available"
@@ -176,10 +198,12 @@ import MacLayouts
 
     func undoLast() {
         let edit = undo
+        let end = editEnd
         let restoreLayout = switchedLayout
         clear()
-        if let edit, edit.apply(), restoreLayout {
-            _ = SystemLayouts.switchAfterCorrection(from: edit.language)
+        if let edit, edit.apply() {
+            ignoredThrough = end
+            if restoreLayout { _ = SystemLayouts.switchAfterCorrection(from: edit.language) }
         }
     }
 

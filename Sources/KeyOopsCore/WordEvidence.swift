@@ -15,6 +15,48 @@ public enum WordEvidence {
         return result
     }()
 
+    enum ContextRole { case boundary, anchor, dependent }
+
+    private static let shortEnglish: Set<String> = ["a", "i", "in", "of", "to", "on", "at", "by", "we", "he", "it", "me", "my", "as", "is", "am", "be", "or", "if", "so", "us"]
+    private static let shortRussian: Set<String> = ["я", "и", "в", "к", "с", "у", "о", "а", "на", "не", "мы", "вы", "он", "ты", "из", "по", "за", "до", "от", "но"]
+
+    static func contextRole(_ word: String, candidate: String, source: LayoutLanguage) -> ContextRole {
+        guard candidate.allSatisfy(\.isLetter), word.count == candidate.count,
+              let original = dictionaries[source], let target = dictionaries[source.opposite] else { return .boundary }
+        let lower = word.lowercased()
+        let normalCase = word == lower || word == lower.prefix(1).uppercased() + lower.dropFirst()
+        guard normalCase else { return .boundary }
+        let sourceFunctions = source == .english ? shortEnglish : shortRussian
+        let targetFunctions = source == .english ? shortRussian : shortEnglish
+        if word.count <= 2 {
+            // A single arbitrary key may be a variable. It can join a contextual
+            // proposal, but cannot supply evidence for one.
+            guard word.allSatisfy(\.isLetter), targetFunctions.contains(candidate.lowercased()),
+                  !sourceFunctions.contains(lower), word.count == 1 || !original.contains(word)
+            else { return .boundary }
+            return .dependent
+        }
+        guard word.count >= 4, !original.contains(word), target.contains(candidate) else { return .boundary }
+        if !word.allSatisfy(\.isLetter) {
+            // Internal punctuation can be a physical letter key. Never cross a
+            // terminal punctuation mark, identifier delimiter, URL or email separator.
+            let letterKeys = ",.[];'"
+            guard source == .english, word.first?.isLetter == true, word.last?.isLetter == true,
+                  word.allSatisfy({ $0.isLetter || letterKeys.contains($0) }) else { return .boundary }
+            let fragments = word.split(whereSeparator: { !$0.isLetter })
+            let known = fragments.filter { original.contains(String($0)) }
+            if !known.isEmpty {
+                // A short dictionary abbreviation inside a comma-key spelling (Pf in
+                // Pf,skf) may join a phrase but must never vote for automatic correction.
+                guard fragments.count == 2, word.filter({ !$0.isLetter }) == ",",
+                      known.count == 1, let fragment = known.first, fragment.count <= 2,
+                      !sourceFunctions.contains(fragment.lowercased()) else { return .boundary }
+                return .dependent
+            }
+        }
+        return .anchor
+    }
+
     public static func evaluate(_ text: String, candidate: String, source: LayoutLanguage) -> Decision {
         guard text.count >= 3, text.count <= CompletedWord.maximumUTF16Length,
               candidate.allSatisfy(\.isLetter), candidate.count == text.count,
