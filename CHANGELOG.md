@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+## 0.2.0-beta.2
+
 ### Fixed
+
+- Recognize Russian words mapped to English punctuation keys in suggestions.
 
 - Live corrections verify the host actually changed the text before switching layouts. Rejected writes preserve a newer user selection. Continued typing dismisses stale suggestions and undo.
 
