@@ -7,7 +7,8 @@ public enum WordEvidence {
         var result: [LayoutLanguage: Lexicon] = [:]
         for (language, code) in [(LayoutLanguage.english, "en"), (.russian, "ru")] {
             let shipped = Bundle.main.url(forResource: code + "-lex", withExtension: "bin")
-            let url = shipped ?? Bundle.module.url(forResource: code + "-lex", withExtension: "bin")
+            let url = Bundle.main.bundleURL.pathExtension == "app" ? shipped
+                : Bundle.module.url(forResource: code + "-lex", withExtension: "bin")
             if let url, let data = try? Data(contentsOf: url),
                let lexicon = try? Lexicon.decode(data), lexicon.lang == language { result[language] = lexicon }
         }

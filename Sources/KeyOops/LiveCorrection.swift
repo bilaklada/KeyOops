@@ -157,13 +157,10 @@ import MacLayouts
 
     private func inspect(_ editor: Editor) {
         guard let caret = editor.selection, caret.length == 0, caret.location > 1 else { return }
-        let length = min(51, caret.location)
+        let length = min(CompletedWord.inspectionLength, caret.location)
         guard let suffix = editor.text(CFRange(location: caret.location - length, length: length)),
-              suffix.last == " " else { return }
-        let before = suffix.dropLast()
-        let token = before.reversed().prefix { !$0.isWhitespace }.reversed()
-        guard !token.isEmpty, token.count <= 48, token.count < before.count || caret.location == length else { return }
-        let original = String(token)
+              let original = CompletedWord.read(suffix: suffix, startsAtDocumentBeginning: caret.location == length)
+        else { return }
         guard let language = try? LayoutLanguage.reading(original), let pair = try? SystemLayouts.pair() else { return }
         let (from, to) = language == .english ? (pair.english, pair.russian) : (pair.russian, pair.english)
         guard let candidate = try? from.convert(original, to: to) else { return }
