@@ -1,0 +1,16 @@
+name: Verify KeyOops
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify conversion and detection
+        run: swift run VerifyCore
+      - name: Verify Services transactions
+        run: swift run VerifyService
+      - name: Build and check the app bundle
+        run: Scripts/build-app.sh
