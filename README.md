@@ -15,9 +15,15 @@ A shortcut can be assigned under System Settings → Keyboard → Keyboard Short
 
 KeyOops reads enabled layouts at invocation time. The preferred layout is the active one when it matches the language. Otherwise there must be one enabled layout for that language. It handles ordinary and Shift-modified keys on the main typing block. Punctuation follows physical positions. Spaces, tabs and line breaks are preserved. Text alone cannot distinguish keypad input, Option combinations, Caps Lock or composed sequences from other ways of producing the same glyph.
 
-A small bundled vocabulary labels some candidates as likely mistakes. Every replacement requires confirmation. Select only the affected span. Mixed scripts, ambiguous mappings, unsupported characters and selections over 4,096 characters are declined. The host controls whether it offers Services in a given field and how it inserts plain text, including formatting and undo.
+The selection Service previews every replacement. Its label uses a small common-word vocabulary. Live mode additionally uses offline English and Russian dictionaries. Select only the affected span. Mixed scripts, ambiguous mappings, unsupported characters and selections over 4,096 characters are declined. The host controls whether it offers Services in a given field and how it inserts plain text, including formatting and undo.
 
-Processing takes place locally when the Service is invoked. KeyOops uses the Services transaction pasteboard, checks secure-input state, and requests zero Accessibility or Input Monitoring permissions. It keeps no input history and writes no selection text to logs. It has no analytics, network client, background typing monitor or global clipboard access.
+## While typing
+
+From the menu bar choose **Suggest** or **Automatic**, grant Accessibility and Input Monitoring to the installed app when prompted, then choose the mode again. While typing in TextEdit or Notes, Space triggers a check of the preceding word. In Suggest mode the menu bar indicates when a correction is available. Accept or dismiss it from the menu. Automatic mode applies high-confidence candidates and offers undo in the menu. Continue typing, moving the caret or switching apps can invalidate a pending edit. Live mode starts Off on each launch.
+
+Only these two editors are enabled for live checks. Compatibility varies by text control. The selection Service remains available in other apps that support macOS Services. Neither mode changes the active keyboard layout.
+
+All processing is local. The Service uses a transaction pasteboard. Live mode reads a bounded suffix from the focused text area and keeps at most one pending edit for 12 seconds. Neither mode keeps an input history, writes selection text to logs, or transmits text. [Live-mode design](docs/decisions/002-live-correction.md)
 
 ## Engineering
 

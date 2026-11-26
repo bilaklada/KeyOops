@@ -5,3 +5,5 @@ Report security issues privately to Lada Bilak at lada.bilak1@gmail.com. Include
 KeyOops processes selections on demand in memory. A Service request contains text supplied by the calling application. The provider checks macOS secure input before reading the selection and again after confirmation. Protected fields also depend on the host withholding its contents. A host that deliberately supplies sensitive text cannot be identified reliably from the Service request.
 
 Changes that expand input access, retention or permissions should explain the need, the lifetime of the data and how cancellation or failure affects the host selection.
+
+Live correction is opt-in per session and requires Accessibility and Input Monitoring. It checks a space key code and reads a bounded text range only in supported editors. Candidate and undo text are kept in memory for up to 12 seconds. See [the live-mode decision](docs/decisions/002-live-correction.md).
