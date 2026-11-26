@@ -20,9 +20,11 @@ enum Failure: Error { case unexpected(String) }
         if change { board.clearContents(); board.setString("new selection", forType: .string) }
         return accept
     })
+    let initialRevision = board.changeCount
     let error = service.process(board)
     guard (error == nil) == succeeds, shown == preview, board.string(forType: .string) == expected
     else { throw Failure.unexpected(name) }
+    if succeeds, board.changeCount == initialRevision { throw Failure.unexpected("Missing reply transaction") }
 }
 
 try scenario("accept", input: "a a", preview: true, expected: "ф ф", succeeds: true)

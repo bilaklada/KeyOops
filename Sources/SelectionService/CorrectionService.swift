@@ -42,6 +42,7 @@ import MacLayouts
                 return "The selection changed or secure input became active."
             }
             // Services supplies a private transaction pasteboard. The host inserts the reply.
+            pasteboard.clearContents()
             guard pasteboard.setString(candidate, forType: .string) else { return "Could not return the correction." }
             return nil
         } catch LayoutError.multiple {
