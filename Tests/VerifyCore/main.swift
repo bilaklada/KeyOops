@@ -42,3 +42,7 @@ try check("Shifted punctuation", digits.convert("2@", to: symbols) == "2\"")
 try rejects(.ambiguous) { try KeyboardLayout(outputs: [base: ".", shift: "."]).convert(".", to: digits) }
 try rejects(.unsupported) { try digits.convert("2🐈", to: symbols) }
 print("Core checks passed.")
+try check("Known phrase", Assessment.suggests(original: "руддщ цщкдв", candidate: "hello world", source: .russian))
+try check("Known original retained", !Assessment.suggests(original: "hello", candidate: "мир", source: .english))
+try check("Unknown target", !Assessment.suggests(original: "руддщ ффф", candidate: "hello aaa", source: .russian))
+try check("Valid Russian", !Assessment.suggests(original: "мир", candidate: "vbh", source: .russian))
