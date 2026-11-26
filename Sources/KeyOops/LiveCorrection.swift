@@ -66,6 +66,7 @@ import MacLayouts
 
 @MainActor private struct Edit {
     let editor: Editor
+    let language: LayoutLanguage
     let start: Int
     let original: String
     let replacement: String
@@ -86,7 +87,7 @@ import MacLayouts
         return true
     }
 
-    var reversed: Self { Self(editor: editor, start: start, original: replacement, replacement: original) }
+    var reversed: Self { Self(editor: editor, language: language.opposite, start: start, original: replacement, replacement: original) }
 }
 
 @MainActor final class LiveCorrection {
@@ -97,6 +98,7 @@ import MacLayouts
     private var monitor: Any?
     private var pending: Edit?
     private var undo: Edit?
+    private var switchedLayout = false
     private var expiry: Task<Void, Never>?
     private var boundary: Task<Void, Never>?
     var canAccept: Bool { pending != nil }
@@ -148,6 +150,7 @@ import MacLayouts
         boundary?.cancel()
         pending = nil
         undo = nil
+        switchedLayout = false
         status = mode == .off ? "Selected text only" : "\(mode.rawValue) · TextEdit and Notes"
         changed()
     }
@@ -167,10 +170,11 @@ import MacLayouts
         let evidence = WordEvidence.evaluate(original, candidate: candidate, source: language)
         guard evidence != .keep else { return }
         clear()
-        let edit = Edit(editor: editor, start: caret.location - original.utf16.count - 1,
+        let edit = Edit(editor: editor, language: language, start: caret.location - original.utf16.count - 1,
                         original: original + " ", replacement: candidate + " ")
         if mode == .automatic && evidence == .automatic {
             guard edit.apply() else { return }
+            switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
             undo = edit.reversed
             status = "Layout corrected · Undo available"
         } else {
@@ -185,6 +189,7 @@ import MacLayouts
         guard let edit = pending else { return }
         clear()
         if edit.apply() {
+            switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
             undo = edit.reversed
             status = "Layout corrected · Undo available"
             expire()
@@ -194,8 +199,11 @@ import MacLayouts
 
     func undoLast() {
         let edit = undo
+        let restoreLayout = switchedLayout
         clear()
-        _ = edit?.apply()
+        if let edit, edit.apply(), restoreLayout {
+            _ = SystemLayouts.switchAfterCorrection(from: edit.language)
+        }
     }
 
     private func expire() {

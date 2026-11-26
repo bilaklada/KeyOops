@@ -21,7 +21,7 @@ The selection Service previews every replacement. Its label uses a small common-
 
 From the menu bar choose **Suggest** or **Automatic**, grant Accessibility and Input Monitoring to the installed app when prompted, then choose the mode again. While typing in TextEdit or Notes, Space triggers a check of the preceding word. In Suggest mode the menu bar indicates when a correction is available. Accept or dismiss it from the menu. Automatic mode applies high-confidence candidates and offers undo in the menu. Continue typing, moving the caret or switching apps can invalidate a pending edit. Live mode starts Off on each launch.
 
-Only these two editors are enabled for live checks. Compatibility varies by text control. The selection Service remains available in other apps that support macOS Services. Neither mode changes the active keyboard layout.
+Only these two editors are enabled for live checks. Compatibility varies by text control. The selection Service remains available in other apps that support macOS Services. After a successful live correction KeyOops switches to the target layout if the original layout is still active. Undo attempts to restore it. The selection Service leaves the layout alone.
 
 All processing is local. The Service uses a transaction pasteboard. Live mode reads a bounded suffix from the focused text area and keeps at most one pending edit for 12 seconds. Neither mode keeps an input history, writes selection text to logs, or transmits text. [Live-mode design](docs/decisions/002-live-correction.md)
 
