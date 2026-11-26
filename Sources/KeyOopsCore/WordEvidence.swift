@@ -15,10 +15,10 @@ public enum WordEvidence {
         return result
     }()
 
-    enum ContextRole { case boundary, anchor, dependent }
+    enum ContextRole { case boundary, anchor, dependent, ambiguous }
 
-    private static let shortEnglish: Set<String> = ["a", "i", "in", "of", "to", "on", "at", "by", "we", "he", "it", "me", "my", "as", "is", "am", "be", "or", "if", "so", "us"]
-    private static let shortRussian: Set<String> = ["я", "и", "в", "к", "с", "у", "о", "а", "на", "не", "мы", "вы", "он", "ты", "из", "по", "за", "до", "от", "но"]
+    private static let shortEnglish: Set<String> = ["a", "i", "in", "of", "to", "on", "at", "by", "we", "he", "it", "me", "my", "as", "is", "am", "be", "or", "if", "so", "us", "the", "you", "she", "him", "her", "our", "for", "and", "but"]
+    private static let shortRussian: Set<String> = ["я", "и", "в", "к", "с", "у", "о", "а", "на", "не", "мы", "вы", "он", "ты", "из", "по", "за", "до", "от", "но", "она", "они", "его", "ему", "мне", "для", "под", "при", "без", "над"]
 
     static func contextRole(_ word: String, candidate: String, source: LayoutLanguage) -> ContextRole {
         guard candidate.allSatisfy(\.isLetter), word.count == candidate.count,
@@ -28,11 +28,16 @@ public enum WordEvidence {
         guard normalCase else { return .boundary }
         let sourceFunctions = source == .english ? shortEnglish : shortRussian
         let targetFunctions = source == .english ? shortRussian : shortEnglish
+        guard !sourceFunctions.contains(lower) else { return .boundary }
+        if (2...3).contains(word.count), word.allSatisfy(\.isLetter),
+           targetFunctions.contains(candidate.lowercased()), original.contains(word) {
+            return .ambiguous
+        }
         if word.count <= 2 {
             // A single arbitrary key may be a variable. It can join a contextual
             // proposal, but cannot supply evidence for one.
             guard word.allSatisfy(\.isLetter), targetFunctions.contains(candidate.lowercased()),
-                  !sourceFunctions.contains(lower), word.count == 1 || !original.contains(word)
+                  word.count == 1 || !original.contains(word)
             else { return .boundary }
             return .dependent
         }

@@ -15,6 +15,7 @@ public struct LayoutProposal {
         var candidates: [String] = []
         var anchors = Set<String>()
         var leadingShortAfterText = false
+        var ambiguous = false
         var source: LayoutLanguage?
         var fallback: Self?
 
@@ -37,6 +38,7 @@ public struct LayoutProposal {
             }
             let role = WordEvidence.contextRole(word, candidate: candidate, source: language)
             guard role != .boundary else { break }
+            if role == .ambiguous { ambiguous = true }
             if role == .anchor { anchors.insert(candidate.lowercased()) }
             leadingShortAfterText = word.count <= 2 && start != remainder.startIndex
                 && remainder[..<start].dropLast().last?.isWhitespace == false
@@ -53,9 +55,9 @@ public struct LayoutProposal {
             words.removeLast()
             candidates.removeLast()
         }
-        guard words.count >= 2, let source, !anchors.isEmpty else { return fallback }
+        guard words.count >= 2, let source, !anchors.isEmpty, !ambiguous || anchors.count >= 2 else { return fallback }
         return Self(original: words.reversed().joined(separator: " "),
                     replacement: candidates.reversed().joined(separator: " "),
-                    language: source, decision: anchors.count >= 2 ? .automatic : .suggest)
+                    language: source, decision: anchors.count >= 2 && !ambiguous ? .automatic : .suggest)
     }
 }
