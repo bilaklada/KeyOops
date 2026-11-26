@@ -5,6 +5,7 @@ Build with Swift 6 on macOS. All commands run from the repository root.
 | Command | What it verifies |
 | --- | --- |
 | `swift run VerifyCore` | Bidirectional physical-key mapping, punctuation, script and suggestion rules |
+| `swift run VerifyLiveEdit` | Native AppKit text replacement, undo, moved caret, lost focus and failed host writes |
 | `swift run VerifyService` | Acceptance, cancellation, size, secure input and stale private pasteboards |
 | `swift run VerifyLayouts` | The enabled ABC and Russian layouts on a Mac configured with that pair |
 | `Scripts/build-app.sh` | Release compilation, property list and ad-hoc signature |

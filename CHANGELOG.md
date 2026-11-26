@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Live corrections verify the host actually changed the text before switching layouts. Rejected writes preserve a newer user selection. Continued typing dismisses stale suggestions and undo.
+
 ## 0.2.0-beta.1
 
 First packaged preview for macOS 14 and later.

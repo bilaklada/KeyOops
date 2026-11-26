@@ -13,6 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify conversion and detection
         run: swift run VerifyCore
+      - name: Verify AppKit live edits
+        run: swift run VerifyLiveEdit
       - name: Verify Services transactions
         run: swift run VerifyService
       - name: Build and check the app bundle

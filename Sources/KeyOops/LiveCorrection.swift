@@ -6,7 +6,7 @@ import MacLayouts
 
 /// macOS text offsets are UTF-16 units. Keep the exact inspected range for the
 /// reply so an edit, focus change or selection change invalidates it.
-@MainActor private struct Editor {
+@MainActor private struct Editor: LiveTextEditor {
     let element: AXUIElement
     let pid: pid_t
 
@@ -58,36 +58,14 @@ import MacLayouts
         return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
     }
 
+    func replaceSelection(with text: String) -> Bool {
+        AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
+    }
+
     var focused: Bool {
         guard let current = Self.current() else { return false }
         return pid == current.pid && CFEqual(element, current.element)
     }
-}
-
-@MainActor private struct Edit {
-    let editor: Editor
-    let language: LayoutLanguage
-    let start: Int
-    let original: String
-    let replacement: String
-
-    func apply() -> Bool {
-        let range = CFRange(location: start, length: original.utf16.count)
-        guard editor.focused, let caret = editor.selection, caret.length == 0,
-              caret.location == start + range.length, editor.text(range) == original,
-              editor.select(range) else { return false }
-        guard editor.focused, let selected = editor.selection,
-              selected.location == range.location, selected.length == range.length,
-              editor.text(range) == original else { return false }
-        let status = AXUIElementSetAttributeValue(editor.element, kAXSelectedTextAttribute as CFString, replacement as CFString)
-        if status != .success {
-            if editor.focused { _ = editor.select(caret) }
-            return false
-        }
-        return true
-    }
-
-    var reversed: Self { Self(editor: editor, language: language.opposite, start: start, original: replacement, replacement: original) }
 }
 
 @MainActor final class LiveCorrection {
@@ -96,8 +74,8 @@ import MacLayouts
     private(set) var mode = Mode.off
     private(set) var status = "Selected text only"
     private var monitor: Any?
-    private var pending: Edit?
-    private var undo: Edit?
+    private var pending: GuardedEdit?
+    private var undo: GuardedEdit?
     private var switchedLayout = false
     private var expiry: Task<Void, Never>?
     private var boundary: Task<Void, Never>?
@@ -125,10 +103,12 @@ import MacLayouts
             changed()
             return
         }
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.boundary?.cancel()
+                guard event.type == .keyDown else { return }
+                if self.pending != nil || self.undo != nil { self.clear() }
                 guard event.keyCode == UInt16(kVK_Space),
                       event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
                       !event.isARepeat, !IsSecureEventInputEnabled(),
@@ -167,7 +147,7 @@ import MacLayouts
         let evidence = WordEvidence.evaluate(original, candidate: candidate, source: language)
         guard evidence != .keep else { return }
         clear()
-        let edit = Edit(editor: editor, language: language, start: caret.location - original.utf16.count - 1,
+        let edit = GuardedEdit(editor: editor, language: language, start: caret.location - original.utf16.count - 1,
                         original: original + " ", replacement: candidate + " ")
         if mode == .automatic && evidence == .automatic {
             guard edit.apply() else { return }
