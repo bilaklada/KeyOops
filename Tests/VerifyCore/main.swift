@@ -101,4 +101,31 @@ for text in ["I forgot the language ", "Я забыла переключить �
              "mail user@example.com ", "visit https://example.com ", "let user_id ", "read API "] {
     try check("Preserve legitimate input", phrase(text) == nil)
 }
+// Simulate Spaces as they arrive. Once an automatic correction switches the
+// layout, later words render normally under the intended layout.
+@MainActor func simulate(_ intended: String, in language: LayoutLanguage) throws -> String {
+    let (native, wrong) = language == .english ? (abc, ru) : (ru, abc)
+    var text = ""
+    var switched = false
+    for word in intended.split(separator: " ") {
+        text += (switched ? String(word) : try native.convert(String(word), to: wrong)) + " "
+        if let edit = phrase(text), edit.decision == .automatic {
+            text.removeLast(edit.original.count + 1)
+            text += edit.replacement + " "
+            switched = true
+        }
+    }
+    return text
+}
+try check("Incremental Russian", try simulate("Забыла переключить язык", in: .russian) == "Забыла переключить язык ")
+try check("Incremental English", try simulate("I forgot language", in: .english) == "I forgot language ")
+for sentence in ["I forgot to switch my keyboard", "Я забыла переключить язык", "Отправь мне ссылку на документ",
+                 "We meet at the office today", "Open файл в TextEdit", "assign z to variable x",
+                 "send it to me tomorrow", "я и ты идём в парк", "Version два готова", "my email is support@example.com"] {
+    var prefix = ""
+    for token in sentence.split(separator: " ") {
+        prefix += token + " "
+        try check("Preserve each valid prefix", phrase(prefix) == nil)
+    }
+}
 print("Core and phrase checks passed.")

@@ -1,7 +1,7 @@
 import AppKit
 import SelectionService
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var item: NSStatusItem?
     private let live = LiveCorrection()
     private let service = CorrectionService { candidate, likely in
@@ -25,6 +25,7 @@ import SelectionService
 
     private func refresh() {
         let menu = NSMenu()
+        menu.delegate = self
         item?.button?.title = live.canAccept ? "KeyOops · Suggestion" : "KeyOops"
         menu.addItem(withTitle: live.status, action: nil, keyEquivalent: "")
         for mode in LiveCorrection.Mode.allCases {
@@ -43,6 +44,20 @@ import SelectionService
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit KeyOops", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item?.menu = menu
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let row = menu.items.first(where: { $0.action == #selector(accept) }) else { return }
+        if let candidate = live.suggestionPreview {
+            row.title = "Accept “" + candidate + "”"
+        } else {
+            row.title = "Suggestion expired"
+            row.action = nil
+        }
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menu.items.first(where: { $0.action == #selector(accept) })?.title = "Accept layout suggestion"
     }
 
     @objc private func accept() { live.accept() }

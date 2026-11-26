@@ -1,4 +1,4 @@
-import CoreFoundation
+import Foundation
 import KeyOopsCore
 
 @MainActor public protocol LiveTextEditor {
@@ -28,6 +28,14 @@ import KeyOopsCore
     private func ownsSelection(_ range: CFRange) -> Bool {
         guard editor.focused, let selected = editor.selection else { return false }
         return selected.location == range.location && selected.length == range.length
+    }
+
+    /// A menu opened after a caret or focus change must not reveal the old proposal.
+    public var preview: String? {
+        let range = CFRange(location: start, length: original.utf16.count)
+        let caret = CFRange(location: start + range.length, length: 0)
+        guard ownsSelection(caret), editor.text(range) == original else { return nil }
+        return replacement.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public func apply() -> Bool {

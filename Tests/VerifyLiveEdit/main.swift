@@ -42,6 +42,7 @@ import MacLayouts
 
 @MainActor func verify() {
     let editor = EditorFixture()
+    precondition(editor.edit.preview == "привет")
     precondition(editor.edit.apply() && editor.view.string == "🌍 привет ")
     precondition(editor.edit.reversed.apply() && editor.view.string == "🌍 ghbdtn ")
 
@@ -51,6 +52,7 @@ import MacLayouts
 
     let moved = EditorFixture()
     moved.view.setSelectedRange(NSRange(location: 0, length: 0))
+    precondition(moved.edit.preview == nil)
     precondition(!moved.edit.apply() && moved.view.selectedRange().location == 0)
 
     let switched = EditorFixture()

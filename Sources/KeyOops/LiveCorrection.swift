@@ -82,6 +82,7 @@ import MacLayouts
     private var switchedLayout = false
     private var expiry: Task<Void, Never>?
     private var boundary: Task<Void, Never>?
+    var suggestionPreview: String? { pending?.preview }
     var canAccept: Bool { pending != nil }
     var canUndo: Bool { undo != nil }
 
