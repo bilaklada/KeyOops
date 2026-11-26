@@ -2,6 +2,10 @@
 
 KeyOops corrects English–Russian keyboard layout mistakes in selected text on macOS. If you meant to type **hello world** while Russian was active, select **руддщ цщкдв** and preview the correction. In the other direction, **ghbdtn vbh** becomes **привет мир**.
 
+## Download the beta
+
+[Get the universal macOS disk image](https://github.com/bilaklada/KeyOops/releases/tag/v0.2.0-beta.1) for macOS 14 or later. Open the DMG, drag KeyOops to Applications and launch it. The download runs on Intel and Apple silicon without a compiler. The beta uses an ad-hoc signature. See [first launch and beta limitations](docs/releases/0.2.0-beta.1.md).
+
 ## Build and use
 
 1. On macOS 14 or later, install Xcode or Command Line Tools with Swift 6. Enable an English and a Russian keyboard layout in System Settings → Keyboard → Input Sources.
