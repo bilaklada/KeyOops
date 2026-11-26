@@ -46,3 +46,7 @@ try check("Known phrase", Assessment.suggests(original: "руддщ цщкдв",
 try check("Known original retained", !Assessment.suggests(original: "hello", candidate: "мир", source: .english))
 try check("Unknown target", !Assessment.suggests(original: "руддщ ффф", candidate: "hello aaa", source: .russian))
 try check("Valid Russian", !Assessment.suggests(original: "мир", candidate: "vbh", source: .russian))
+try check("Frequent wrong layout", WordEvidence.evaluate("ghbdtn", candidate: "привет", source: .english) == .automatic)
+try check("Reverse evidence", WordEvidence.evaluate("руддщ", candidate: "hello", source: .russian) == .automatic)
+try check("Real source word", WordEvidence.evaluate("tot", candidate: "еще", source: .english) == .keep)
+try check("Code token", WordEvidence.evaluate("var123", candidate: "мир123", source: .english) == .keep)

@@ -7,6 +7,9 @@ bundle=dist/KeyOops.app
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$bin/KeyOops" "$bundle/Contents/MacOS/"
 cp Resources/Info.plist "$bundle/Contents/"
+cp Sources/KeyOopsCore/Data/*.bin "$bundle/Contents/Resources/"
+cp -R Licenses "$bundle/Contents/Resources/"
+cp THIRD_PARTY_NOTICES.md "$bundle/Contents/Resources/"
 cp LICENSE "$bundle/Contents/Resources/"
 plutil -lint "$bundle/Contents/Info.plist"
 # Finder may attach bundle metadata after the first launch. It prevents re-signing.

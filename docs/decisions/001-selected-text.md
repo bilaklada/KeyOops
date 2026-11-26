@@ -14,4 +14,4 @@ Separate conversion from intent detection. Use enabled English and Russian Unico
 
 ## Provenance
 
-Tilqos informed the investigation of Text Input Services and physical-key conversion. Its code is MIT licensed, and its language resources carry separate terms. KeyOops uses an independent implementation and ships no Tilqos assets. [Tilqos](https://github.com/elapen/tilqos)
+Tilqos informed the investigation of Text Input Services and physical-key conversion. Its code is MIT licensed, and its language resources carry separate terms. The original selection milestone used an independent conversion implementation. The live detection milestone adds the English and Russian dictionaries and lookup code described in [third-party notices](../../THIRD_PARTY_NOTICES.md). [Tilqos](https://github.com/elapen/tilqos)

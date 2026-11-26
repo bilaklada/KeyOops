@@ -1,5 +1,5 @@
-public enum LayoutLanguage: Equatable {
-    case english, russian
+public enum LayoutLanguage: String, Sendable {
+    case english = "en", russian = "ru"
 
     public var opposite: Self { self == .english ? .russian : .english }
 

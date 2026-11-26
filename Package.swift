@@ -5,7 +5,7 @@ let package = Package(
     name: "KeyOops",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "KeyOopsCore"),
+        .target(name: "KeyOopsCore", resources: [.process("Data")]),
         .target(name: "MacLayouts", dependencies: ["KeyOopsCore"]),
         .target(name: "SelectionService", dependencies: ["KeyOopsCore", "MacLayouts"]),
         .executableTarget(name: "KeyOops", dependencies: ["SelectionService"]),
