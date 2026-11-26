@@ -58,4 +58,47 @@ try check("Initials stay manual", WordEvidence.evaluate("GHBDTN", candidate: "П
 try check("Short suggestion", WordEvidence.evaluate("vbh", candidate: "мир", source: .english) == .suggest)
 try check("Russian letter on comma key", WordEvidence.evaluate(",skj", candidate: "было", source: .english) == .suggest)
 try check("Punctuated English is protected", WordEvidence.evaluate("he.", candidate: "рую", source: .english) == .keep)
-print("Core checks passed.")
+
+
+// Printable rows on ABC and Russian. The shifted period and comma occupy
+// the same physical keys as capital Ю and Б in the second layout.
+func punctuationFixture(_ base: String, _ shifted: String) -> KeyboardLayout {
+    var outputs: [PhysicalKey: Character] = [:]
+    for (code, pair) in zip(base, shifted).enumerated() {
+        outputs[PhysicalKey(code: UInt16(code), shifted: false)] = pair.0
+        outputs[PhysicalKey(code: UInt16(code), shifted: true)] = pair.1
+    }
+    return KeyboardLayout(outputs: outputs)
+}
+
+let enRow = "qwertyuiop[]asdfghjkl;'zxcvbnm,."
+let ruRow = "йцукенгшщзхъфывапролджэячсмитьбю"
+let abc = punctuationFixture(enRow, "QWERTYUIOP{}ASDFGHJKL:\"ZXCVBNM<>")
+let ru = punctuationFixture(ruRow, ruRow.uppercased())
+
+@MainActor func phrase(_ text: String, start: Bool = true) -> LayoutProposal? {
+    LayoutProposal.ending(in: text, atDocumentStart: start, english: abc, russian: ru)
+}
+
+let sentence = phrase("Pf,skf gthtrk.xbnm zpsr ")
+try check("Reported sentence", sentence?.replacement == "Забыла переключить язык" && sentence?.decision == .automatic)
+try check("No premature edit", phrase("Pf,skf gthtrk.xbnm zpsr") == nil)
+try check("One ambiguous letter", phrase("z ") == nil && phrase("Ш ") == nil)
+try check("Weak context is a suggestion", phrase("z ghbdtn ")?.decision == .suggest)
+try check("Short function word recovered", phrase("z ghbdtn zpsr ")?.replacement == "я привет язык")
+let preposition = try ru.convert("в новый город", to: abc)
+try check("Preposition recovered", phrase(preposition + " ")?.replacement == "в новый город")
+let reverse = try abc.convert("I forgot the language", to: ru)
+let englishPhrase = phrase(reverse + " ")
+try check("Reverse pronoun and article", englishPhrase?.replacement == "I forgot the language" && englishPhrase?.decision == .automatic)
+try check("Do not take a variable from English", phrase("axis z ghbdtn zpsr ")?.original == "ghbdtn zpsr")
+try check("Repeated evidence", phrase("z ghbdtn ghbdtn ")?.decision == .suggest)
+try check("Valid source boundary", phrase("hello ghbdtn zpsr ")?.original == "ghbdtn zpsr")
+try check("Newline boundary", phrase("z ghbdtn\nzpsr ")?.original == "zpsr")
+try check("Double-space boundary", phrase("z ghbdtn  zpsr ")?.original == "zpsr")
+try check("Clipped left edge", phrase("ghbdtn zpsr ", start: false)?.original == "zpsr")
+for text in ["I forgot the language ", "Я забыла переключить язык ", "set variable z ", "hello мир ",
+             "mail user@example.com ", "visit https://example.com ", "let user_id ", "read API "] {
+    try check("Preserve legitimate input", phrase(text) == nil)
+}
+print("Core and phrase checks passed.")

@@ -36,7 +36,11 @@ public enum WordEvidence {
             else { return .boundary }
             return .dependent
         }
-        guard word.count >= 4, !original.contains(word), target.contains(candidate) else { return .boundary }
+        guard !original.contains(word), target.contains(candidate) else { return .boundary }
+        if word.count == 3 {
+            // Pronouns, prepositions and nouns of this length can link stronger words.
+            return word.allSatisfy(\.isLetter) ? .dependent : .boundary
+        }
         if !word.allSatisfy(\.isLetter) {
             // Internal punctuation can be a physical letter key. Never cross a
             // terminal punctuation mark, identifier delimiter, URL or email separator.
