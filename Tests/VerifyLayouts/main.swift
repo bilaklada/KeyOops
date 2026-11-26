@@ -8,3 +8,5 @@ for (typed, intended) in [("руддщ", "hello"), ("цщкдв", "world"), ("П
     }
 }
 print("Enabled English and Russian layouts passed bidirectional checks.")
+
+checkCorpus(english: pair.english, russian: pair.russian)
