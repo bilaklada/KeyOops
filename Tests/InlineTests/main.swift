@@ -13,6 +13,11 @@ import Carbon
                          (kVK_Escape, .maskCommand), (kVK_ANSI_A, CGEventFlags())] {
         precondition(InlineSuggestion.shortcut(event(key, flags)) == nil)
     }
+    precondition(InlineSuggestion.shortcut(event(kVK_Tab), optionSpace: true) == nil)
+    precondition(InlineSuggestion.shortcut(event(kVK_Space, .maskAlternate), optionSpace: true) == true)
+    precondition(InlineSuggestion.shortcut(event(kVK_Space, .maskAlternate)) == nil)
+    precondition(InlineSuggestion.shortcut(event(kVK_Space, [.maskAlternate, .maskShift]), optionSpace: true) == nil)
+    precondition(InlineSuggestion.shortcut(event(kVK_Escape), optionSpace: true) == false)
     let repeated = event(kVK_Tab)
     repeated.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
     precondition(InlineSuggestion.shortcut(repeated) == nil)

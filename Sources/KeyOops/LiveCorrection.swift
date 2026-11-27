@@ -1,105 +1,9 @@
 import AppKit
 import ApplicationServices
 import Carbon
+import os
 import KeyOopsCore
 import MacLayouts
-
-/// macOS text offsets are UTF-16 units. Keep the exact inspected range for the
-/// reply so an edit, focus change or selection change invalidates it.
-@MainActor private struct Editor: LiveTextEditor {
-    let element: AXUIElement
-    let pid: pid_t
-    let window: AXUIElement
-    let document: String?
-    let noteMarker: CFTypeRef?
-
-    static func current() -> Self? {
-        guard !IsSecureEventInputEnabled(), AXIsProcessTrusted(),
-              let app = NSWorkspace.shared.frontmostApplication,
-              ["com.apple.TextEdit", "com.apple.Notes"].contains(app.bundleIdentifier),
-              let element = attribute(AXUIElementCreateApplication(app.processIdentifier),
-                                      kAXFocusedUIElementAttribute) else { return nil }
-        guard CFGetTypeID(element) == AXUIElementGetTypeID() else { return nil }
-        let field = element as! AXUIElement
-        guard attribute(field, kAXRoleAttribute) as? String == kAXTextAreaRole,
-              attribute(field, kAXSubroleAttribute) as? String != kAXSecureTextFieldSubrole else { return nil }
-        var editable = DarwinBoolean(false)
-        guard AXUIElementIsAttributeSettable(field, kAXSelectedTextAttribute as CFString, &editable) == .success,
-              editable.boolValue else { return nil }
-        guard let rawWindow = attribute(field, kAXWindowAttribute),
-              CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { return nil }
-        let window = rawWindow as! AXUIElement
-        let isNotes = app.bundleIdentifier == "com.apple.Notes"
-        let fieldDocument = attribute(field, kAXDocumentAttribute) as? String
-        let document = fieldDocument ?? (isNotes ? nil : attribute(window, kAXDocumentAttribute) as? String)
-        // Notes can reuse a window and text area for consecutive notes. Bind
-        // the session to a document identifier or a host-issued text marker.
-        var noteMarker: CFTypeRef?
-        if isNotes && document == nil {
-            guard AXUIElementCopyParameterizedAttributeValue(field, "AXTextMarkerForIndex" as CFString,
-                    0 as CFNumber, &noteMarker) == .success, noteMarker != nil else { return nil }
-        }
-        return Self(element: field, pid: app.processIdentifier, window: window, document: document, noteMarker: noteMarker)
-    }
-
-    static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var result: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success else { return nil }
-        return result
-    }
-
-    var characterCount: Int? { (Self.attribute(element, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue }
-
-    var selection: CFRange? {
-        guard let raw = Self.attribute(element, kAXSelectedTextRangeAttribute),
-              CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
-        var range = CFRange()
-        guard AXValueGetValue(raw as! AXValue, .cfRange, &range), range.location >= 0 else { return nil }
-        return range
-    }
-
-    func rangeValue(_ range: CFRange) -> AXValue? {
-        var copy = range
-        return AXValueCreate(.cfRange, &copy)
-    }
-
-    func text(_ range: CFRange) -> String? {
-        guard let value = rangeValue(range) else { return nil }
-        var text: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element,
-                kAXStringForRangeParameterizedAttribute as CFString, value, &text) == .success else { return nil }
-        return text as? String
-    }
-
-    func bounds(_ range: CFRange) -> CGRect? {
-        guard let value = rangeValue(range) else { return nil }
-        var raw: CFTypeRef?
-        var rect = CGRect.zero
-        guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
-                  value, &raw) == .success, let raw, CFGetTypeID(raw) == AXValueGetTypeID(),
-              AXValueGetValue(raw as! AXValue, .cgRect, &rect), rect.height > 0 else { return nil }
-        return rect
-    }
-
-    func select(_ range: CFRange) -> Bool {
-        guard focused, let value = rangeValue(range) else { return false }
-        return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
-    }
-
-    func replaceSelection(with text: String) -> Bool {
-        focused && AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
-    }
-
-    var focused: Bool {
-        guard let current = Self.current() else { return false }
-        guard pid == current.pid, CFEqual(window, current.window), CFEqual(element, current.element),
-              document == current.document else { return false }
-        guard let noteMarker else { return true }
-        var index: CFTypeRef?
-        return AXUIElementCopyParameterizedAttributeValue(current.element, "AXIndexForTextMarker" as CFString,
-            noteMarker, &index) == .success && ((index as? NSNumber)?.intValue ?? -1) >= 0
-    }
-}
 
 @MainActor final class LiveCorrection {
     enum Mode: String, CaseIterable { case off = "Off", suggest = "Suggest", automatic = "Automatic" }
@@ -111,14 +15,16 @@ import MacLayouts
     private var loading = false
     private var monitor: Any?
     private var observer: AXObserver?
-    private var owner: Editor?
+    private var owner: FocusedEditor?
     private var session: EditorPassage?
     private var pending: GuardedEdit?
     private var undo: GuardedEdit?
     private var switchedLayout = false
     private var boundary: Task<Void, Never>?
+    private let timings = OSSignposter(subsystem: "KeyOops", category: "LivePreview")
     private var floor = 0
     private var menuState = ""
+    private(set) var actionGeneration = UUID()
     var canAccept: Bool { pending != nil }
     var canUndo: Bool { undo != nil }
     var suggestionPreview: String? {
@@ -176,9 +82,10 @@ import MacLayouts
         // AX focus notifications discard the binding; inspect and shortcut
         // actions also check it synchronously before accessing retained text.
         if owner == nil {
-            guard let editor = Editor.current(), let caret = editor.selection, caret.length == 0,
+            guard let editor = FocusedEditor.current(), let caret = editor.selection, caret.length == 0,
                   observeFocus(editor) else { return }
             owner = editor
+            guard editor.focused else { resetContext(); return }
             // A global monitor may run just before or after the host inserts the key.
             // Include the current word only, never earlier completed sentences.
             let n = min(CompletedWord.maximumUTF16Length, caret.location)
@@ -195,27 +102,28 @@ import MacLayouts
         // supplies committed text; a partially typed last word remains verbatim.
         let completedWord = [kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode))
         guard boundary == nil, completedWord || pending != nil || session == nil else { return }
+        let traceID = timings.makeSignpostID()
+        let interval = timings.beginInterval("Live update", id: traceID)
         boundary = Task { @MainActor in
+            defer { self.timings.endInterval("Live update", interval) }
             try? await Task.sleep(for: .milliseconds(24))
             guard !Task.isCancelled else { return }
             self.boundary = nil
             self.inspect()
+            if self.inline.panelVisible { self.timings.emitEvent("Preview visible", id: traceID) }
         }
     }
 
-    private func observeFocus(_ editor: Editor) -> Bool {
+    private func observeFocus(_ editor: FocusedEditor) -> Bool {
         var newObserver: AXObserver?
-        guard AXObserverCreate(editor.pid, { _, _, _, context in
+        guard AXObserverCreate(editor.pid, { sender, _, _, context in
             guard let context else { return }
             MainActor.assumeIsolated {
-                Unmanaged<LiveCorrection>.fromOpaque(context).takeUnretainedValue().resetContext()
+                let live = Unmanaged<LiveCorrection>.fromOpaque(context).takeUnretainedValue()
+                if live.observer == sender { live.resetContext() }
             }
         }, &newObserver) == .success, let newObserver else { return false }
-        let app = AXUIElementCreateApplication(editor.pid)
-        for name in [kAXFocusedUIElementChangedNotification, kAXFocusedWindowChangedNotification] {
-            guard AXObserverAddNotification(newObserver, app, name as CFString,
-                    Unmanaged.passUnretained(self).toOpaque()) == .success else { return false }
-        }
+        guard editor.registerInvalidation(on: newObserver, context: Unmanaged.passUnretained(self).toOpaque()) else { return false }
         observer = newObserver
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(newObserver), .commonModes)
         return true
@@ -224,12 +132,14 @@ import MacLayouts
     @objc fileprivate func resetContext() {
         if let observer { CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes) }
         observer = nil
+        owner?.invalidate()
         owner = nil
         floor = 0
         clearEdits()
     }
 
     private func clearEdits() {
+        actionGeneration = UUID()
         inline.hide()
         boundary?.cancel()
         boundary = nil
@@ -243,7 +153,7 @@ import MacLayouts
     private func updateStatus() {
         status = pending != nil ? (session?.full == true ? "Review accumulated corrections to continue" : "Layout suggestion available")
             : undo != nil ? "Layout corrected · Undo available"
-            : mode == .off ? "Selected text only" : "\(mode.rawValue) · TextEdit and Notes"
+            : mode == .off ? "Selected text only" : "\(mode.rawValue) · Compatible text fields"
         let state = "\(mode.rawValue)|\(status)|\(canUndo)"
         if state != menuState {
             menuState = state
@@ -268,8 +178,8 @@ import MacLayouts
         let hadPending = pending != nil
         pending = session.edit(automatic: false, accepting: true)
         if let pending, let preview = pending.preview, let caret = owner.selection, let bounds = owner.bounds(caret) {
-            inline.show(preview, at: bounds) { [weak self] accept in
-                guard let self else { return false }
+            inline.show(preview, at: bounds, optionSpace: owner.optionSpace) { [weak self] accept in
+                guard let self, self.session === session, owner.focused else { return false }
                 return accept ? self.accept() : self.dismiss()
             }
         } else {

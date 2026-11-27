@@ -34,12 +34,17 @@ import SelectionService
             row.representedObject = mode.rawValue
             row.state = live.mode == mode ? .on : .off
         }
+        func addAction(_ title: String, _ action: Selector) {
+            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = live.actionGeneration
+        }
         if live.canAccept {
-            menu.addItem(withTitle: "Accept layout suggestion", action: #selector(accept), keyEquivalent: "").target = self
-            menu.addItem(withTitle: "Dismiss", action: #selector(dismiss), keyEquivalent: "").target = self
+            addAction("Accept layout suggestion", #selector(accept))
+            addAction("Dismiss", #selector(dismiss))
         }
         if live.canUndo {
-            menu.addItem(withTitle: "Undo layout correction", action: #selector(undo), keyEquivalent: "").target = self
+            addAction("Undo layout correction", #selector(undo))
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit KeyOops", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -60,9 +65,15 @@ import SelectionService
         menu.items.first(where: { $0.action == #selector(accept) })?.title = "Accept layout suggestion"
     }
 
-    @objc private func accept() { live.accept() }
-    @objc private func dismiss() { live.dismiss() }
-    @objc private func undo() { live.undoLast() }
+    @objc private func accept(_ sender: NSMenuItem) {
+        if sender.representedObject as? UUID == live.actionGeneration { live.accept() }
+    }
+    @objc private func dismiss(_ sender: NSMenuItem) {
+        if sender.representedObject as? UUID == live.actionGeneration { live.dismiss() }
+    }
+    @objc private func undo(_ sender: NSMenuItem) {
+        if sender.representedObject as? UUID == live.actionGeneration { live.undoLast() }
+    }
     @objc private func changeMode(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String,
               let mode = LiveCorrection.Mode(rawValue: value) else { return }
