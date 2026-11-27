@@ -5,6 +5,7 @@ public struct LayoutProposal {
     public let original: String
     public let replacement: String
     public let language: LayoutLanguage
+    public internal(set) var trailingContext = ""
     public let decision: WordEvidence.Decision
 
     public static func ending(in suffix: String, atDocumentStart: Bool,

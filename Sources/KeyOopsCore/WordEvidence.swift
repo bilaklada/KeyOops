@@ -15,6 +15,10 @@ public enum WordEvidence {
         return result
     }()
 
+    static func recognizes(_ word: String, in language: LayoutLanguage) -> Bool {
+        dictionaries[language]?.contains(word) ?? true
+    }
+
     enum ContextRole { case boundary, anchor, dependent, ambiguous }
 
     private static let shortEnglish: Set<String> = ["a", "i", "in", "of", "to", "on", "at", "by", "we", "he", "it", "me", "my", "as", "is", "am", "be", "or", "if", "so", "us", "the", "you", "she", "him", "her", "our", "for", "and", "but"]

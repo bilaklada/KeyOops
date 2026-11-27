@@ -23,3 +23,4 @@ precondition(short?.replacement == "я привет" && short?.decision == .sugg
 let reverse = try pair.english.convert("I forgot language", to: pair.russian)
 precondition(proposal(reverse + " ")?.replacement == "I forgot language")
 print("Contextual layout examples passed.")
+try checkPhrases(english: pair.english, russian: pair.russian)
