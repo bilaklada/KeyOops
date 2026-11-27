@@ -9,6 +9,9 @@ import MacLayouts
 @MainActor private struct Editor: LiveTextEditor {
     let element: AXUIElement
     let pid: pid_t
+    let window: AXUIElement
+    let document: String?
+    let noteMarker: CFTypeRef?
 
     static func current() -> Self? {
         guard !IsSecureEventInputEnabled(), AXIsProcessTrusted(),
@@ -23,7 +26,20 @@ import MacLayouts
         var editable = DarwinBoolean(false)
         guard AXUIElementIsAttributeSettable(field, kAXSelectedTextAttribute as CFString, &editable) == .success,
               editable.boolValue else { return nil }
-        return Self(element: field, pid: app.processIdentifier)
+        guard let rawWindow = attribute(field, kAXWindowAttribute),
+              CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { return nil }
+        let window = rawWindow as! AXUIElement
+        let isNotes = app.bundleIdentifier == "com.apple.Notes"
+        let fieldDocument = attribute(field, kAXDocumentAttribute) as? String
+        let document = fieldDocument ?? (isNotes ? nil : attribute(window, kAXDocumentAttribute) as? String)
+        // Notes can reuse a window and text area for consecutive notes. Bind
+        // the session to a document identifier or a host-issued text marker.
+        var noteMarker: CFTypeRef?
+        if isNotes && document == nil {
+            guard AXUIElementCopyParameterizedAttributeValue(field, "AXTextMarkerForIndex" as CFString,
+                    0 as CFNumber, &noteMarker) == .success, noteMarker != nil else { return nil }
+        }
+        return Self(element: field, pid: app.processIdentifier, window: window, document: document, noteMarker: noteMarker)
     }
 
     static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
@@ -31,6 +47,8 @@ import MacLayouts
         guard AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success else { return nil }
         return result
     }
+
+    var characterCount: Int? { (Self.attribute(element, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue }
 
     var selection: CFRange? {
         guard let raw = Self.attribute(element, kAXSelectedTextRangeAttribute),
@@ -64,17 +82,22 @@ import MacLayouts
     }
 
     func select(_ range: CFRange) -> Bool {
-        guard let value = rangeValue(range) else { return false }
+        guard focused, let value = rangeValue(range) else { return false }
         return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
     }
 
     func replaceSelection(with text: String) -> Bool {
-        AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
+        focused && AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
     }
 
     var focused: Bool {
         guard let current = Self.current() else { return false }
-        return pid == current.pid && CFEqual(element, current.element)
+        guard pid == current.pid, CFEqual(window, current.window), CFEqual(element, current.element),
+              document == current.document else { return false }
+        guard let noteMarker else { return true }
+        var index: CFTypeRef?
+        return AXUIElementCopyParameterizedAttributeValue(current.element, "AXIndexForTextMarker" as CFString,
+            noteMarker, &index) == .success && ((index as? NSNumber)?.intValue ?? -1) >= 0
     }
 }
 
@@ -84,28 +107,31 @@ import MacLayouts
     private(set) var mode = Mode.off
     private(set) var status = "Selected text only"
     private let inline = InlineSuggestion()
-    private var phraseModel: PhraseModel?
-    private var requestedModel = false
+    private var model: PhraseModel?
+    private var loading = false
     private var monitor: Any?
+    private var observer: AXObserver?
+    private var owner: Editor?
+    private var session: EditorPassage?
     private var pending: GuardedEdit?
     private var undo: GuardedEdit?
-    private var editEnd: (editor: Editor, offset: Int)?
-    // Only the field identity and UTF-16 offset survive a dismissal or undo.
-    private var ignoredThrough: (editor: Editor, offset: Int)?
     private var switchedLayout = false
-    private var expiry: Task<Void, Never>?
     private var boundary: Task<Void, Never>?
-    var suggestionPreview: String? { pending?.preview }
+    private var floor = 0
+    private var menuState = ""
     var canAccept: Bool { pending != nil }
     var canUndo: Bool { undo != nil }
+    var suggestionPreview: String? {
+        guard session?.refresh() == true else { return nil }
+        return session?.edit(automatic: false, accepting: true)?.preview
+    }
 
     init() {
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(resetContext),
-            name: NSWorkspace.didActivateApplicationNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(resetContext),
-            name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(resetContext),
-            name: NSWorkspace.willSleepNotification, object: nil)
+        for name in [NSWorkspace.didActivateApplicationNotification,
+                     NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.willSleepNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(resetContext),
+                                                              name: name, object: nil)
+        }
     }
 
     func set(_ next: Mode, prompt: Bool) {
@@ -121,134 +147,160 @@ import MacLayouts
             return
         }
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.boundary?.cancel()
-                guard event.type == .keyDown else { self.inline.hide(); return }
-                if self.pending != nil || self.undo != nil { self.clear() }
-                guard event.keyCode == UInt16(kVK_Space),
-                      event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-                      !event.isARepeat, !IsSecureEventInputEnabled(),
-                      let editor = Editor.current() else { return }
-                // The host must commit the space before we inspect its caret.
-                self.boundary = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(45))
-                    guard !Task.isCancelled, editor.focused else { return }
-                    self.inspect(editor)
-                }
-            }
+            MainActor.assumeIsolated { self?.receive(event) }
         }
         mode = monitor == nil ? .off : next
-        if mode != .off && !requestedModel {
-            requestedModel = true
+        if model == nil && !loading {
+            loading = true
             Task { [weak self] in
                 let model = await Task.detached(priority: .utility) { PhraseModel.bundled }.value
-                self?.phraseModel = model
+                guard let self else { return }
+                self.model = model
+                self.loading = false
+                if self.mode != .off && model == nil {
+                    self.status = "Bundled language model unavailable"
+                    self.changed()
+                } else { self.inspect() }
             }
         }
-        clear()
+        updateStatus()
     }
 
-    @objc private func resetContext() {
-        ignoredThrough = nil
-        clear()
+    private func receive(_ event: NSEvent) {
+        if event.type == .scrollWheel { inline.hide(); return }
+        let navigation = [kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow, kVK_Home,
+                          kVK_End, kVK_PageUp, kVK_PageDown, kVK_Tab, kVK_Escape, kVK_Delete, kVK_ForwardDelete]
+        guard event.type == .keyDown, !IsSecureEventInputEnabled(),
+              event.modifierFlags.intersection([.command, .control]).isEmpty,
+              !navigation.contains(Int(event.keyCode)) else { resetContext(); return }
+        // AX focus notifications discard the binding; inspect and shortcut
+        // actions also check it synchronously before accessing retained text.
+        if owner == nil {
+            guard let editor = Editor.current(), let caret = editor.selection, caret.length == 0,
+                  observeFocus(editor) else { return }
+            owner = editor
+            // A global monitor may run just before or after the host inserts the key.
+            // Include the current word only, never earlier completed sentences.
+            let n = min(CompletedWord.maximumUTF16Length, caret.location)
+            let suffix = editor.text(CFRange(location: caret.location - n, length: n)) ?? ""
+            var fragment = suffix[...]
+            if event.keyCode == kVK_Space || event.keyCode == kVK_Return, fragment.last?.isWhitespace == true {
+                fragment = fragment.dropLast()
+            }
+            let word = fragment.reversed().prefix { !$0.isWhitespace }
+            floor = caret.location - (suffix.utf16.count - fragment.utf16.count) - String(word.reversed()).utf16.count
+        }
+        if undo != nil { undo = nil; switchedLayout = false; updateStatus() }
+        // Coalesce fast typing without postponing analysis indefinitely. The host
+        // supplies committed text; a partially typed last word remains verbatim.
+        let completedWord = [kVK_Space, kVK_Return, kVK_ANSI_KeypadEnter].contains(Int(event.keyCode))
+        guard boundary == nil, completedWord || pending != nil || session == nil else { return }
+        boundary = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(24))
+            guard !Task.isCancelled else { return }
+            self.boundary = nil
+            self.inspect()
+        }
     }
 
-    func dismiss() {
-        ignoredThrough = editEnd
-        clear()
+    private func observeFocus(_ editor: Editor) -> Bool {
+        var newObserver: AXObserver?
+        guard AXObserverCreate(editor.pid, { _, _, _, context in
+            guard let context else { return }
+            MainActor.assumeIsolated {
+                Unmanaged<LiveCorrection>.fromOpaque(context).takeUnretainedValue().resetContext()
+            }
+        }, &newObserver) == .success, let newObserver else { return false }
+        let app = AXUIElementCreateApplication(editor.pid)
+        for name in [kAXFocusedUIElementChangedNotification, kAXFocusedWindowChangedNotification] {
+            guard AXObserverAddNotification(newObserver, app, name as CFString,
+                    Unmanaged.passUnretained(self).toOpaque()) == .success else { return false }
+        }
+        observer = newObserver
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(newObserver), .commonModes)
+        return true
     }
 
-    private func clear() {
+    @objc fileprivate func resetContext() {
+        if let observer { CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes) }
+        observer = nil
+        owner = nil
+        floor = 0
+        clearEdits()
+    }
+
+    private func clearEdits() {
         inline.hide()
-        editEnd = nil
-        expiry?.cancel()
         boundary?.cancel()
+        boundary = nil
+        session = nil
         pending = nil
         undo = nil
         switchedLayout = false
-        status = mode == .off ? "Selected text only" : "\(mode.rawValue) · TextEdit and Notes"
-        changed()
+        updateStatus()
     }
 
-    private func inspect(_ editor: Editor) {
-        guard let caret = editor.selection, caret.length == 0, caret.location > 1 else { return }
-        var floor = 0
-        if let ignoredThrough, CFEqual(ignoredThrough.editor.element, editor.element),
-           ignoredThrough.editor.pid == editor.pid, ignoredThrough.offset <= caret.location {
-            floor = ignoredThrough.offset
-        } else {
-            ignoredThrough = nil
+    private func updateStatus() {
+        status = pending != nil ? (session?.full == true ? "Review accumulated corrections to continue" : "Layout suggestion available")
+            : undo != nil ? "Layout corrected · Undo available"
+            : mode == .off ? "Selected text only" : "\(mode.rawValue) · TextEdit and Notes"
+        let state = "\(mode.rawValue)|\(status)|\(canUndo)"
+        if state != menuState {
+            menuState = state
+            changed()
         }
-        let length = min(LayoutProposal.inspectionLength, caret.location - floor)
-        guard length > 1 else { return }
-        guard let suffix = editor.text(CFRange(location: caret.location - length, length: length)),
-              let pair = try? SystemLayouts.pair(),
-              let proposal = LayoutProposal.ending(in: suffix, atDocumentStart: caret.location - floor == length,
-                                                   english: pair.english, russian: pair.russian)
-                ?? phraseModel?.ending(in: suffix, atDocumentStart: caret.location - floor == length,
-                                               english: pair.english, russian: pair.russian) else { return }
-        clear()
-        editEnd = (editor, caret.location)
-        let contextual = !proposal.trailingContext.isEmpty
-        let tail = contextual ? proposal.trailingContext + " " : ""
-        let separator = contextual ? "" : " "
-        let edit = GuardedEdit(editor: editor, language: proposal.language,
-                               start: caret.location - proposal.original.utf16.count - proposal.trailingContext.utf16.count - 1,
-                               original: proposal.original + separator, replacement: proposal.replacement + separator,
-                               trailingContext: tail)
-        if mode == .automatic && proposal.decision == .automatic {
-            guard edit.apply() else { return }
+    }
+
+    private func inspect() {
+        guard mode != .off, let owner, let model else { return }
+        guard owner.focused else { resetContext(); return }
+        if session == nil {
+            guard let pair = try? SystemLayouts.pair() else { return }
+            session = EditorPassage(editor: owner, start: floor, model: model, english: pair.english, russian: pair.russian)
+        }
+        guard let session, session.refresh() else { resetContext(); return }
+        if mode == .automatic, let edit = session.edit(automatic: true) {
+            guard edit.apply() else { resetContext(); return }
             switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
             undo = edit.reversed
-            status = "Layout corrected · Undo available"
-        } else {
-            pending = edit
-            status = "Layout suggestion available"
-            if let bounds = editor.bounds(caret), let preview = edit.preview {
-                inline.show(preview, at: bounds) { [weak self] accept in
-                    guard let self, edit.preview != nil, editor.bounds(caret) == bounds else { return false }
-                    if accept { return self.accept() }
-                    self.dismiss()
-                    return true
-                }
-            }
+            guard session.resumeAfterAutomaticEdit() else { resetContext(); return }
         }
-        expire()
-        changed()
+        let hadPending = pending != nil
+        pending = session.edit(automatic: false, accepting: true)
+        if let pending, let preview = pending.preview, let caret = owner.selection, let bounds = owner.bounds(caret) {
+            inline.show(preview, at: bounds) { [weak self] accept in
+                guard let self else { return false }
+                return accept ? self.accept() : self.dismiss()
+            }
+        } else {
+            inline.hide()
+        }
+        if session.full && pending == nil { floor = session.end; self.session = nil }
+        if pending != nil || hadPending || undo != nil { updateStatus() }
+    }
+
+    @discardableResult func dismiss() -> Bool {
+        guard pending != nil, let session, session.refresh() else { resetContext(); return false }
+        floor = session.end
+        clearEdits()
+        return true
     }
 
     @discardableResult func accept() -> Bool {
-        guard let edit = pending else { return false }
-        let end = editEnd
-        clear()
-        if edit.apply() {
-            editEnd = end
-            switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
-            undo = edit.reversed
-            status = "Layout corrected · Undo available"
-            expire()
-            changed()
-            return true
-        }
-        return false
+        guard pending != nil, let session, session.refresh(),
+              let edit = session.edit(automatic: false, accepting: true), edit.apply() else { resetContext(); return false }
+        floor = owner?.selection?.location ?? session.end
+        clearEdits()
+        undo = edit.reversed
+        switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
+        updateStatus()
+        return true
     }
 
     func undoLast() {
-        let edit = undo
-        let end = editEnd
-        let restoreLayout = switchedLayout
-        clear()
-        if let edit, edit.apply() {
-            ignoredThrough = end
-            if restoreLayout { _ = SystemLayouts.switchAfterCorrection(from: edit.language) }
-        }
-    }
-
-    private func expire() {
-        expiry = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(12))
-            if !Task.isCancelled { clear() }
-        }
+        guard let undo, undo.apply() else { resetContext(); return }
+        if switchedLayout { _ = SystemLayouts.switchAfterCorrection(from: undo.language) }
+        floor = owner?.selection?.location ?? floor
+        clearEdits()
     }
 }

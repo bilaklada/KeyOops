@@ -44,10 +44,14 @@ import Carbon
     }
 
     func show(_ preview: String, at bounds: CGRect, handle: @escaping (Bool) -> Bool) {
-        hide()
-        guard let primary = NSScreen.screens.first else { return }
+        guard let primary = NSScreen.screens.first else { hide(); return }
         let anchor = CGPoint(x: bounds.minX, y: primary.frame.maxY - bounds.maxY)
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(anchor) }) else { return }
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(anchor) }) else { hide(); return }
+        self.handle = handle
+        if tap != nil {
+            display(preview, anchor: anchor, caretHeight: bounds.height, screen: screen)
+            return
+        }
         guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
                 options: .defaultTap, eventsOfInterest: 1 << CGEventType.keyDown.rawValue,
                 callback: inlineKeyCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return }
@@ -55,12 +59,12 @@ import Carbon
         source = CFMachPortCreateRunLoopSource(nil, port, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
-        self.handle = handle
         display(preview, anchor: anchor, caretHeight: bounds.height, screen: screen)
     }
 
     func display(_ preview: String, anchor: CGPoint, caretHeight: CGFloat, screen: NSScreen) {
-        label.stringValue = preview + "    ⇥ Tab   ·   Esc"
+        let excerpt = preview.count > 180 ? String(preview.prefix(85)) + " … " + String(preview.suffix(85)) : preview
+        label.stringValue = excerpt + "    ⇥ Tab   ·   Esc"
         let visible = screen.visibleFrame
         let width = min(visible.width - 20, min(460, ceil(label.attributedStringValue.size().width) + 8))
         guard let cell = label.cell else { hide(); return }
@@ -82,8 +86,10 @@ private func inlineKeyCallback(_ proxy: CGEventTapProxy, _ type: CGEventType, _ 
     let owner = Unmanaged<InlineSuggestion>.fromOpaque(context).takeUnretainedValue()
     let shortcut = type == .keyDown ? InlineSuggestion.shortcut(event) : nil
     let consumed = MainActor.assumeIsolated {
-        defer { owner.hide() }
-        guard let shortcut else { return false }
+        guard let shortcut else {
+            if type != .keyDown { owner.hide() }
+            return false
+        }
         return owner.handle?(shortcut) == true
     }
     return consumed ? nil : Unmanaged.passUnretained(event)
