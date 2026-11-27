@@ -46,6 +46,17 @@ import MacLayouts
     precondition(editor.edit.apply() && editor.view.string == "🌍 привет ")
     precondition(editor.edit.reversed.apply() && editor.view.string == "🌍 ghbdtn ")
 
+    let mixed = EditorFixture()
+    mixed.view.string = "Ьн name is "
+    mixed.view.setSelectedRange(NSRange(location: 11, length: 0))
+    let prefix = GuardedEdit(editor: mixed, language: .russian, start: 0, original: "Ьн",
+                             replacement: "My", trailingContext: " name is ")
+    precondition(prefix.apply() && mixed.view.string == "My name is ")
+    precondition(mixed.view.selectedRange().location == 11 && prefix.reversed.apply())
+    mixed.view.string = "Ьн game is "
+    mixed.view.setSelectedRange(NSRange(location: 11, length: 0))
+    precondition(prefix.preview == nil && !prefix.apply())
+
     let typed = EditorFixture()
     typed.view.insertText("x", replacementRange: typed.view.selectedRange())
     precondition(!typed.edit.apply() && typed.view.string == "🌍 ghbdtn x")
