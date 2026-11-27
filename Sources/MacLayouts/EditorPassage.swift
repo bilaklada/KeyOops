@@ -9,7 +9,7 @@ import KeyOopsCore
     private let english: KeyboardLayout
     private let russian: KeyboardLayout
     public let start: Int
-    private var passage = TypingPassage()
+    private var passage: TypingPassage
     private var rightLength: Int?
     private var rightText: String?
     private var caret: Int
@@ -17,6 +17,8 @@ import KeyOopsCore
 
     public init(editor: any LiveTextEditor, start: Int, model: PhraseModel,
                 english: KeyboardLayout, russian: KeyboardLayout) {
+        let prefix = start > 0 && editor.focused ? editor.text(CFRange(location: start - 1, length: 1)) : nil
+        passage = TypingPassage(continuingWord: start > 0 && prefix?.last?.isWhitespace != true)
         self.editor = editor
         self.start = start
         self.caret = start

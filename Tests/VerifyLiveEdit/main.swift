@@ -113,6 +113,14 @@ import KeyOopsCore
     precondition(nextBatch.refresh() && nextBatch.edit(automatic: false) == nil)
     precondition(declined.view.string.hasPrefix("цу "))
 
+    let partial = EditorFixture()
+    partial.view.string = "unfinished"
+    partial.view.setSelectedRange(NSRange(location: partial.view.string.utf16.count, length: 0))
+    let continuation = EditorPassage(editor: partial, start: partial.view.string.utf16.count,
+                                     model: PhraseModel.bundled!, english: en, russian: ru)
+    partial.view.insertText("руддщ ", replacementRange: partial.view.selectedRange())
+    precondition(continuation.refresh() && continuation.edit(automatic: false) == nil)
+
     let overflow = EditorFixture()
     overflow.view.string = "цу all enjoy. " + String(repeating: "x", count: TypingPassage.capacity)
     overflow.view.setSelectedRange(NSRange(location: overflow.view.string.utf16.count, length: 0))
@@ -121,6 +129,20 @@ import KeyOopsCore
     precondition(capped.edit(automatic: false)!.apply())
     precondition(overflow.view.string.hasPrefix("we all enjoy.") &&
                  overflow.view.selectedRange().location == overflow.view.string.utf16.count)
+
+    let long = EditorFixture()
+    long.view.string = String(repeating: "good morning. ", count: 270) + "цу all enjoy. "
+    long.view.setSelectedRange(NSRange(location: long.view.string.utf16.count, length: 0))
+    let longSession = session(long)
+    precondition(longSession.refresh())
+    var refreshTimes = [UInt64]()
+    for _ in 0..<96 {
+        long.view.insertText("x", replacementRange: long.view.selectedRange())
+        let tick = DispatchTime.now().uptimeNanoseconds
+        precondition(longSession.refresh() && longSession.edit(automatic: false)?.preview == "we")
+        refreshTimes.append(DispatchTime.now().uptimeNanoseconds - tick)
+    }
+    print("AppKit long-session refresh and preview p95 \(refreshTimes.sorted()[refreshTimes.count * 95 / 100] / 1000) µs")
 
     let jump = EditorFixture()
     jump.view.string = "цу all enjoy. existing text"

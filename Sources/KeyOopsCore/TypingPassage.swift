@@ -21,7 +21,11 @@ public struct TypingPassage {
     public private(set) var language: LayoutLanguage?
     public private(set) var automaticLanguage: LayoutLanguage?
 
-    public init() {}
+    private var continuingWord: Bool
+
+    public init(continuingWord: Bool = false) {
+        self.continuingWord = continuingWord
+    }
     public var suggestedText: String { proposed + suggestion + unfinished }
     public var automaticText: String { confirmed + automatic + unfinished }
 
@@ -32,6 +36,13 @@ public struct TypingPassage {
         original += text
         for character in text {
             guard character.isWhitespace else { unfinished.append(character); continue }
+            if continuingWord {
+                confirmed += unfinished + String(character)
+                proposed += unfinished + String(character)
+                unfinished = ""
+                continuingWord = false
+                continue
+            }
             if !unfinished.isEmpty {
                 let end = unfinished.lastIndex(where: { !".!?,…:;".contains($0) })
                     .map { unfinished.index(after: $0) } ?? unfinished.startIndex

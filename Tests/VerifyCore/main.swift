@@ -123,9 +123,13 @@ for sentence in ["I forgot to switch my keyboard", "Я забыла перекл
                  "We meet at the office today", "Open файл в TextEdit", "assign z to variable x",
                  "send it to me tomorrow", "я и ты идём в парк", "Version два готова", "my email is support@example.com"] {
     var prefix = ""
+    var live = TypingPassage()
     for token in sentence.split(separator: " ") {
         prefix += token + " "
         try check("Preserve each valid prefix", phrase(prefix) == nil)
+        try check("Append bilingual prefix", live.append(String(token) + " ", model: PhraseModel.bundled!,
+                                                        english: abc, russian: ru))
+        try check("Preserve live bilingual prefix: \(prefix)", live.suggestedText == prefix)
     }
 }
 print("Core and phrase checks passed.")
