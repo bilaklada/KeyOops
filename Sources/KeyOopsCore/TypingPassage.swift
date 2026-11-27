@@ -12,6 +12,7 @@ public struct TypingPassage {
     private var separators: [String] = []
     private var decisions: [WordEvidence.Decision] = []
     private var previous: PhraseModel.Reading?
+    private var previousEndedSentence = false
     private var unfinished = ""
     private var automatic = ""
     private var suggestion = ""
@@ -47,7 +48,6 @@ public struct TypingPassage {
                     confirmed += word + punctuation + String(character)
                     proposed += word + punctuation + String(character)
                 }
-                if !punctuation.isEmpty || character.isNewline { finish() }
             } else {
                 finish()
                 confirmed.append(character)
@@ -80,6 +80,7 @@ public struct TypingPassage {
             if decision != .keep { frozenLanguage = word.source }
             if decision == .automatic { frozenAutomaticLanguage = word.source }
             previous = word.readings[decision == .keep ? 0 : 1]
+            previousEndedSentence = Self.endsSentence(separators[i])
         }
         active.removeFirst(count)
         separators.removeFirst(count)
@@ -99,10 +100,15 @@ public struct TypingPassage {
         render(model)
     }
 
+    private static func endsSentence(_ separator: String) -> Bool {
+        separator.contains { $0.isNewline || ".!?…".contains($0) }
+    }
+
     private mutating func render(_ model: PhraseModel) {
         language = frozenLanguage
         automaticLanguage = frozenAutomaticLanguage
-        decisions = model.decode(active, after: previous)
+        decisions = model.decode(active, after: previous, previousEndedSentence: previousEndedSentence,
+                                 sentenceEnds: separators.map(Self.endsSentence))
         automatic = ""
         suggestion = ""
         for (index, decision) in decisions.enumerated() {

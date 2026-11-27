@@ -35,6 +35,9 @@ func checkPhrases(english: KeyboardLayout, russian: KeyboardLayout) throws {
     }
     let prefix = model.ending(in: "цу all enjoy ", atDocumentStart: true, english: english, russian: russian)
     precondition(prefix?.replacement == "we" && prefix?.trailingContext == " all enjoy")
+    precondition(replay("руку? фку ыщьу ща еру иуые ", automatic: false) == "here? are some of the best ")
+    let bilingual = "я хочу поднять руку. here are some tips. это мой друг. hello again. "
+    precondition(replay(bilingual, automatic: false) == bilingual && replay(bilingual, automatic: true) == bilingual)
     var full = TypingPassage()
     append(String(repeating: "x", count: TypingPassage.capacity), to: &full)
     precondition(!full.append(" ", model: model, english: english, russian: russian))

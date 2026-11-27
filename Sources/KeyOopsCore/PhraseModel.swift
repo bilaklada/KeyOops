@@ -107,29 +107,33 @@ public struct PhraseModel: Sendable {
                     supported: targetKnown || unigram[mapped.lowercased()] != nil)
     }
 
-    private func transition(_ left: Reading, _ right: Reading) -> Double {
-        let probability = bigram[left.token + " " + right.token]
-            ?? ((backoff[left.token] ?? 0) + unigram[right.token]!)
+    private func transition(_ left: Reading, _ right: Reading, sentenceBreak: Bool) -> Double {
+        let unigramScore = unigram[right.token]!
+        // Punctuation starts a new lexical phrase, but the writer may still be
+        // using the same physical keyboard across the sentence boundary.
+        let probability = sentenceBreak ? unigramScore : (bigram[left.token + " " + right.token]
+            ?? ((backoff[left.token] ?? 0) + unigramScore))
         // A language change is possible at every boundary, including genuine
         // bilingual prose. The cost is finite in both directions.
         let layoutPrior = channel[left.mapped ? 1 : 0][right.mapped ? 1 : 0]
-        let languageSwitchCost = left.language == right.language ? 0.0 : 1.8
+        let languageSwitchCost = left.language == right.language ? 0.0 : (sentenceBreak ? 1.25 : 1.8)
         return probability + right.bias + 0.3 * layoutPrior - languageSwitchCost
     }
 
     /// Max-sum forward/backward inference on typed and remapped readings. The
     /// margin at each word compares two complete paths constrained at that word.
-    func decode(_ words: [Word], after previousReading: Reading?) -> [WordEvidence.Decision] {
+    func decode(_ words: [Word], after previousReading: Reading?, previousEndedSentence: Bool,
+                sentenceEnds: [Bool]) -> [WordEvidence.Decision] {
         guard let first = words.first else { return [] }
         guard words.count > 1 else { return [first.isolated] }
         var forward = [first.readings.map { reading in
-            previousReading.map { transition($0, reading) } ?? (unigram[reading.token]! + reading.bias)
+            previousReading.map { transition($0, reading, sentenceBreak: previousEndedSentence) } ?? (unigram[reading.token]! + reading.bias)
         }]
         var edges = [[[Double]]]()
         for i in 1..<words.count {
             let previous = words[i - 1].readings
             let current = words[i].readings
-            let edge = previous.map { left in current.map { transition(left, $0) } }
+            let edge = previous.map { left in current.map { transition(left, $0, sentenceBreak: sentenceEnds[i - 1]) } }
             edges.append(edge)
             forward.append(current.indices.map { j in
                 previous.indices.map { forward[i - 1][$0] + edge[$0][j] }.max()!
