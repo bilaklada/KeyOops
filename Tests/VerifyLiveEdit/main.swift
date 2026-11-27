@@ -49,6 +49,30 @@ import KeyOopsCore
     precondition(editor.edit.apply() && editor.view.string == "🌍 привет ")
     precondition(editor.edit.reversed.apply() && editor.view.string == "🌍 ghbdtn ")
 
+    for id in ["com.apple.Terminal", "com.agilebits.onepassword7", "com.apple.SecurityAgent",
+               "com.apple.Passwords", "com.bitwarden.desktop", "com.mitchellh.ghostty"] {
+        precondition(!LiveHostPolicy.enabled(id))
+    }
+    precondition(!LiveHostPolicy.enabled(nil))
+    precondition(LiveHostPolicy.excludesControl(subrole: "AXSecureTextField", classes: []))
+    precondition(LiveHostPolicy.excludesControl(subrole: nil, classes: ["xterm-helper-textarea"]))
+    for id in ["com.microsoft.VSCode", "com.jetbrains.intellij", "com.apple.iWork.Numbers"] {
+        precondition(LiveHostPolicy.enabled(id) && LiveHostPolicy.usesOptionSpace(id))
+    }
+    precondition(!LiveHostPolicy.usesOptionSpace("com.google.Chrome"))
+    // Hold all text and caret data constant. Each ownership component must
+    // independently prevent equality, including a duplicate URL in two tabs.
+    func identity(pid: pid_t = 1, window: Int = 2, field: Int = 3, area: Int = 4,
+                  path: String = "a", document: String = "draft") -> EditorIdentity<Int> {
+        EditorIdentity(pid: pid, window: window, field: field, document: document,
+                       ancestry: [.init(area: area, url: URL(fileURLWithPath: "/" + path))])
+    }
+    for other in [identity(pid: 2), identity(window: 3), identity(field: 4), identity(area: 5),
+                  identity(path: "b"), identity(document: "another draft")] {
+        precondition(identity() != other)
+    }
+    precondition(LiveHostPolicy.reservesTab(role: "AXCell", classes: []))
+    precondition(!LiveHostPolicy.reservesTab(role: "AXTextArea", classes: []))
     let mixed = EditorFixture()
     mixed.view.string = "Ьн name is "
     mixed.view.setSelectedRange(NSRange(location: 11, length: 0))
