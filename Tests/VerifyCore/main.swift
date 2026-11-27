@@ -129,3 +129,23 @@ for sentence in ["I forgot to switch my keyboard", "Я забыла перекл
     }
 }
 print("Core and phrase checks passed.")
+
+// Exercise the live decoder with the same layout switch the host performs after
+// an automatic edit. Subsequent keys then arrive in their intended script.
+for intended in ["we all enjoy a little bit of poetry", "here are some of the best classical poetry",
+                 "мы с тобой уже знакомы"] {
+    let native = try LayoutLanguage.reading(intended)
+    let (from, to) = native == .english ? (abc, ru) : (ru, abc)
+    let model = PhraseModel.bundled!
+    var session = TypingPassage()
+    var switched = false
+    for word in intended.split(separator: " ") {
+        let typed = switched ? String(word) : try from.convert(String(word), to: to)
+        try check("Append live word", session.append(typed + " ", model: model, english: abc, russian: ru))
+        if session.original != session.automaticText {
+            session.commitAutomatic(model: model, english: abc, russian: ru)
+            switched = true
+        }
+    }
+    try check("Live keyboard switch: \(session.original)", session.original == intended + " ")
+}

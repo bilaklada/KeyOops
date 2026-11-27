@@ -2,64 +2,80 @@ import Foundation
 import KeyOopsCore
 
 func checkPhrases(english: KeyboardLayout, russian: KeyboardLayout) throws {
-    let start = DispatchTime.now().uptimeNanoseconds
-    guard let model = PhraseModel.bundled else { fatalError("Missing KenLM resource") }
-    print("Cold model load: \((DispatchTime.now().uptimeNanoseconds - start) / 1_000_000) ms")
-    func hint(_ text: String) -> LayoutProposal? {
-        model.ending(in: text + " ", atDocumentStart: true, english: english, russian: russian)
+    guard let model = PhraseModel.bundled else { fatalError("Missing phrase model") }
+    func append(_ text: String, to passage: inout TypingPassage) {
+        precondition(passage.append(text, model: model, english: english, russian: russian))
     }
-    for (typed, expected) in [("Ьн name is", "My"), ("Ш фь дфвф", "I am lada"),
-                              ("vjq друг", "мой")] {
-        let result = hint(typed)
-        print("Fixture \(typed) -> \(result?.replacement ?? "(none)")")
-        precondition(result?.replacement == expected && result?.decision == .suggest)
+    func replay(_ text: String, automatic: Bool) -> String {
+        var passage = TypingPassage()
+        for character in text {
+            append(String(character), to: &passage)
+            if automatic, passage.original != passage.automaticText {
+                passage.commitAutomatic(model: model, english: english, russian: russian)
+            }
+        }
+        return automatic ? passage.original : passage.suggestedText
     }
-    for valid in ["my name is", "это мой друг", "use x here", "my друг", "name@example.org",
-                  "x", "Ерфые", "Ьн  name is", "Ьн\nname is"] {
-        precondition(hint(valid) == nil, "Unexpected suggestion for \(valid)")
+    let first = "цу all enjoy a little bit of poetry"
+    let second = "руку фку ыщьу ща еру иуые сдфыышсфд зщуекн"
+    let typed = first + ". " + second + "!\n" + first + "? unfinished"
+    let expected = "we all enjoy a little bit of poetry. here are some of the best classical poetry!\nwe all enjoy a little bit of poetry? unfinished"
+    for automatic in [false, true] {
+        let actual = replay(typed, automatic: automatic)
+        precondition(actual == expected, "Automatic=\(automatic): \(actual)")
+        for valid in ["цу ", "руку ", "я хочу поднять руку. ", "use x here ", "команда telekom заключила ", "my друг ",
+                      "это мой друг ", "name@example.org ", "my name is ", "my file_name "] {
+            precondition(replay(valid, automatic: automatic) == valid, "Changed \(valid)")
+        }
     }
-    // Optional held-out PUD benchmark. Training uses sentences 1...900.
+    for (typed, expected) in [("Ьн name is ", "My name is "), ("Ш фь дфвф ", "I am lada "),
+                              ("vjq друг ", "мой друг "), ("Pf,skf gthtrk.xbnm zpsr ", "Забыла переключить язык ")] {
+        let actual = replay(typed, automatic: false)
+        precondition(actual == expected, "\(typed) -> \(actual)")
+    }
+    let prefix = model.ending(in: "цу all enjoy ", atDocumentStart: true, english: english, russian: russian)
+    precondition(prefix?.replacement == "we" && prefix?.trailingContext == " all enjoy")
+    var full = TypingPassage()
+    append(String(repeating: "x", count: TypingPassage.capacity), to: &full)
+    precondition(!full.append(" ", model: model, english: english, russian: russian))
+    precondition(full.original.utf16.count == TypingPassage.capacity)
+    var times = [UInt64]()
+    var loaded = TypingPassage()
+    for _ in 0..<32 {
+        for word in (first + " " + second).split(separator: " ") {
+            let tick = DispatchTime.now().uptimeNanoseconds
+            append(String(word) + " ", to: &loaded)
+            times.append(DispatchTime.now().uptimeNanoseconds - tick)
+        }
+    }
+    print("Incremental inference warm p95 \(times.sorted()[times.count * 95 / 100] / 1000) µs")
+
     for path in CommandLine.arguments.dropFirst() {
         let sentences = try String(contentsOfFile: path, encoding: .utf8)
             .components(separatedBy: "\n").filter { $0.hasPrefix("# text = ") }.dropFirst(900)
         precondition(sentences.count == 100)
-        let isEnglish = URL(fileURLWithPath: path).lastPathComponent.hasPrefix("en_")
-        let (native, other) = isEnglish ? (english, russian) : (russian, english)
-        var count = 0, exact = 0, falseHints = 0, any = 0
-        var hybridExact = 0, hybridFalse = 0, recovered = 0
-        var times = [UInt64]()
+        let en = URL(fileURLWithPath: path).lastPathComponent.hasPrefix("en_")
+        let (native, other) = en ? (english, russian) : (russian, english)
+        var validCount = 0, falseAutomatic = 0, falseHints = 0, recovered = 0, corrupt = 0
         for sentence in sentences {
             let words = sentence.dropFirst(9).lowercased().split(whereSeparator: \.isWhitespace)
             for end in words.indices where end >= 2 {
                 let chunk = words[(end-2)...end]
                 guard chunk.allSatisfy({ $0.allSatisfy(\.isLetter) }) else { continue }
-                let valid = chunk.joined(separator: " ")
-                guard let wrong = try? native.convert(valid, to: other),
-                      (try? other.convert(wrong, to: native)) == valid else { continue }
-                count += 1
-                func deterministic(_ text: String) -> LayoutProposal? {
-                    LayoutProposal.ending(in: text + " ", atDocumentStart: true, english: english, russian: russian)
-                }
-                let falseHint = hint(valid)
-                if falseHint != nil { falseHints += 1 }
-                if deterministic(valid) ?? falseHint != nil { hybridFalse += 1 }
-                let existing = deterministic(wrong)
-                let tick = DispatchTime.now().uptimeNanoseconds
-                let suggestion = hint(wrong)
-                times.append(DispatchTime.now().uptimeNanoseconds - tick)
-                if let combined = existing ?? suggestion, combined.original == wrong && combined.replacement == valid {
-                    hybridExact += 1
-                    if existing == nil { recovered += 1 }
-                }
-                if let suggestion {
-                    any += 1
-                    if suggestion.original == wrong && suggestion.replacement == valid { exact += 1 }
-                }
+                let valid = chunk.joined(separator: " ") + " "
+                validCount += 1
+                if replay(valid, automatic: true) != valid { falseAutomatic += 1; print("False automatic: \(valid) -> \(replay(valid, automatic: true))") }
+                if replay(valid, automatic: false) != valid { falseHints += 1 }
+                // Alternate between a short layout slip and a longer run.
+                let split = end % 3
+                let prefix = chunk.prefix(split).map(String.init)
+                let suffix = chunk.dropFirst(split).joined(separator: " ")
+                guard let wrong = try? native.convert(suffix, to: other),
+                      (try? other.convert(wrong, to: native)) == suffix else { continue }
+                corrupt += 1
+                if replay((prefix + [wrong]).joined(separator: " ") + " ", automatic: true) == valid { recovered += 1 }
             }
         }
-        times.sort()
-        precondition(!times.isEmpty)
-        print("Hybrid exact: \(hybridExact); newly recovered: \(recovered); false hints: \(hybridFalse)")
-        print("\(isEnglish ? "English" : "Russian") held-out triples: \(count); exact \(exact); any hint \(any); false hints \(falseHints); warm p95 \(times[times.count * 95 / 100] / 1000) µs")
+        print("\(en ? "EN" : "RU") held-out triples \(validCount), false automatic \(falseAutomatic), false hints \(falseHints), exact automatic recovery \(recovered)/\(corrupt)")
     }
 }

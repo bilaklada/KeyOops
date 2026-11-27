@@ -15,6 +15,8 @@ public enum WordEvidence {
         return result
     }()
 
+    static func prepareDictionaries() { _ = dictionaries }
+
     static func recognizes(_ word: String, in language: LayoutLanguage) -> Bool {
         dictionaries[language]?.contains(word) ?? true
     }
