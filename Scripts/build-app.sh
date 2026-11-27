@@ -1,7 +1,12 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-bundle=${KEYOOPS_BUNDLE_OUTPUT:-dist/KeyOops.app}
+output=${KEYOOPS_BUNDLE_OUTPUT:-dist/KeyOops.app}
+# File-provider folders can reattach Finder metadata between stripping it
+# and signing. Assemble and sign on the local temporary volume first.
+stage=$(mktemp -d)
+trap 'rm -rf "$stage"' EXIT
+bundle="$stage/KeyOops.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 case "${1:-}" in
     --universal)
@@ -27,10 +32,17 @@ cp -R Licenses "$bundle/Contents/Resources/"
 cp THIRD_PARTY_NOTICES.md "$bundle/Contents/Resources/"
 cp LICENSE "$bundle/Contents/Resources/"
 plutil -lint "$bundle/Contents/Info.plist"
-# Finder may attach bundle metadata after the first launch. It prevents re-signing.
-if xattr -p com.apple.FinderInfo "$bundle" >/dev/null 2>&1; then
-    xattr -d com.apple.FinderInfo "$bundle"
-fi
 codesign --force --sign - "$bundle"
-codesign --verify --strict "$bundle"
-echo "Built $bundle"
+codesign --verify --strict --all-architectures "$bundle"
+mkdir -p "$(dirname "$output")"
+ditto --norsrc "$bundle" "$output"
+if xattr -p 'com.apple.fileprovider.fpfs#P' "$output" >/dev/null 2>&1; then
+    # Finder may recreate its bundle flag immediately. Verify the signature
+    # in place and strictly verify the delivered contents on a local volume.
+    codesign --verify --all-architectures "$output"
+    ditto --norsrc "$output" "$stage/copied.app"
+    codesign --verify --strict --all-architectures "$stage/copied.app"
+else
+    codesign --verify --strict --all-architectures "$output"
+fi
+echo "Built $output"
