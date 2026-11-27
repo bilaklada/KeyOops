@@ -73,6 +73,8 @@ import MacLayouts
     var changed: () -> Void = {}
     private(set) var mode = Mode.off
     private(set) var status = "Selected text only"
+    private var phraseModel: PhraseModel?
+    private var requestedModel = false
     private var monitor: Any?
     private var pending: GuardedEdit?
     private var undo: GuardedEdit?
@@ -126,6 +128,13 @@ import MacLayouts
             }
         }
         mode = monitor == nil ? .off : next
+        if mode != .off && !requestedModel {
+            requestedModel = true
+            Task { [weak self] in
+                let model = await Task.detached(priority: .utility) { PhraseModel.bundled }.value
+                self?.phraseModel = model
+            }
+        }
         clear()
     }
 
@@ -164,12 +173,18 @@ import MacLayouts
         guard let suffix = editor.text(CFRange(location: caret.location - length, length: length)),
               let pair = try? SystemLayouts.pair(),
               let proposal = LayoutProposal.ending(in: suffix, atDocumentStart: caret.location - floor == length,
-                                                   english: pair.english, russian: pair.russian) else { return }
+                                                   english: pair.english, russian: pair.russian)
+                ?? phraseModel?.ending(in: suffix, atDocumentStart: caret.location - floor == length,
+                                               english: pair.english, russian: pair.russian) else { return }
         clear()
         editEnd = (editor, caret.location)
+        let contextual = !proposal.trailingContext.isEmpty
+        let tail = contextual ? proposal.trailingContext + " " : ""
+        let separator = contextual ? "" : " "
         let edit = GuardedEdit(editor: editor, language: proposal.language,
-                               start: caret.location - proposal.original.utf16.count - 1,
-                               original: proposal.original + " ", replacement: proposal.replacement + " ")
+                               start: caret.location - proposal.original.utf16.count - proposal.trailingContext.utf16.count - 1,
+                               original: proposal.original + separator, replacement: proposal.replacement + separator,
+                               trailingContext: tail)
         if mode == .automatic && proposal.decision == .automatic {
             guard edit.apply() else { return }
             switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
