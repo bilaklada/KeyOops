@@ -6,10 +6,10 @@ The Russian binary derives from Alexander I. Lebedev's LibreOffice ru_RU Hunspel
 
 The four English and Russian isolated-word test lists in Tests/VerifyLayouts/Corpus.swift are adapted from the Tilqos regression corpus under the same MIT license. They are used only in development checks.
 
-The English–Russian phrase model (phrases.arpa) is distributed under CC BY-SA 3.0.
+The English–Russian phrase model and layout-state prior (phrases.arpa and layout-channel.json) is distributed under CC BY-SA 3.0.
 It is derived from the first 900 sentences of each of the Universal Dependencies
 [English PUD](https://github.com/UniversalDependencies/UD_English-PUD/tree/r2.16)
 and [Russian PUD](https://github.com/UniversalDependencies/UD_Russian-PUD/tree/r2.16)
 treebanks by the PUD contributors, with original conversational examples.
 Scripts/train-phrases.py normalizes text and trains a smoothed bigram model using
-KenLM lmplz. See Licenses/PUD-CC-BY-SA-3.0.txt.
+KenLM lmplz. The layout-state prior uses simulated layout slips over training sentences. See Licenses/PUD-CC-BY-SA-3.0.txt.

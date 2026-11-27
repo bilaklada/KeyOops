@@ -22,7 +22,7 @@ case "${1:-}" in
 esac
 cp Resources/Info.plist "$bundle/Contents/"
 cp Sources/KeyOopsCore/Data/*.bin "$bundle/Contents/Resources/"
-cp Sources/KeyOopsCore/Data/phrases.arpa "$bundle/Contents/Resources/"
+cp Sources/KeyOopsCore/Data/phrases.arpa Sources/KeyOopsCore/Data/layout-channel.json "$bundle/Contents/Resources/"
 cp -R Licenses "$bundle/Contents/Resources/"
 cp THIRD_PARTY_NOTICES.md "$bundle/Contents/Resources/"
 cp LICENSE "$bundle/Contents/Resources/"
