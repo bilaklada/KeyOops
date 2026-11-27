@@ -65,7 +65,7 @@ import MacLayouts
         print("Switch to a second fixture field, tab, window, or navigated document with identical text and caret.")
         let timeout = Date().addingTimeInterval(30)
         while Date() < timeout {
-            if let next = FocusedEditor.current(), matches(next, sample), !editor.focused {
+            if let next = FocusedEditor.current(), matches(next, sample), !editor.sameTarget(as: next), !editor.focused {
                 guard edit.preview == nil, !edit.apply(), matches(next, sample) else { fail("Stale edit survived") }
                 print("PASS: stale edit refused in second fixture.")
                 return

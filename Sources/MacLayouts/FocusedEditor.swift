@@ -14,6 +14,8 @@ import Carbon
 
     package func invalidate() { lifetime.valid = false }
 
+    package func sameTarget(as other: Self) -> Bool { identity == other.identity }
+
     package let bundle: String
     package let optionSpace: Bool
     private var documents: [EditorIdentity<AXUIElement>.Document] { identity.ancestry }
@@ -175,7 +177,7 @@ import Carbon
 
     package var focused: Bool {
         guard lifetime.valid, let current = Self.current(checkCapabilities: false),
-              identity == current.identity, optionSpace == current.optionSpace else { invalidate(); return false }
+              sameTarget(as: current), optionSpace == current.optionSpace else { invalidate(); return false }
         guard let documentMarker else { return true }
         var index: CFTypeRef?
         let valid = AXUIElementCopyParameterizedAttributeValue(current.element, "AXIndexForTextMarker" as CFString,
