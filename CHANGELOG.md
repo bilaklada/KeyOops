@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Extend live mode to compatible single-line and multiline controls with document-scoped ownership. Preserve Tab in editors and spreadsheets. Real-host verification is tracked in [live-host acceptance](docs/live-host-acceptance.md).
+
 - Suggest mode collects contextual corrections across sentences until Tab or Esc. Automatic mode applies confident phrase readings and revisits ambiguous words as more text arrives. Live sessions are bounded and tied to one focused editor.
 
 ## 0.2.0-beta.3
