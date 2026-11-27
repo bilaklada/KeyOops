@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Suggest mode collects contextual corrections across sentences until Tab or Esc. Automatic mode applies confident phrase readings and revisits ambiguous words as more text arrives. Live sessions are bounded and tied to one focused editor.
+
 ## 0.2.0-beta.3
 
 - Use adjacent words as evidence for English–Russian corrections. Recover short pronouns and prepositions in context and keep ambiguous single keys unchanged.
