@@ -13,6 +13,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify conversion and detection
         run: swift run VerifyCore
+      - name: Verify inline key handling
+        run: |
+          swiftc Sources/KeyOops/InlineSuggestion.swift Tests/InlineTests/main.swift -o "$RUNNER_TEMP/VerifyInline"
+          "$RUNNER_TEMP/VerifyInline"
       - name: Verify AppKit live edits
         run: swift run VerifyLiveEdit
       - name: Verify Services transactions

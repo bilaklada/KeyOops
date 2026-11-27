@@ -53,6 +53,16 @@ import MacLayouts
         return text as? String
     }
 
+    func bounds(_ range: CFRange) -> CGRect? {
+        guard let value = rangeValue(range) else { return nil }
+        var raw: CFTypeRef?
+        var rect = CGRect.zero
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
+                  value, &raw) == .success, let raw, CFGetTypeID(raw) == AXValueGetTypeID(),
+              AXValueGetValue(raw as! AXValue, .cgRect, &rect), rect.height > 0 else { return nil }
+        return rect
+    }
+
     func select(_ range: CFRange) -> Bool {
         guard let value = rangeValue(range) else { return false }
         return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
@@ -73,6 +83,7 @@ import MacLayouts
     var changed: () -> Void = {}
     private(set) var mode = Mode.off
     private(set) var status = "Selected text only"
+    private let inline = InlineSuggestion()
     private var phraseModel: PhraseModel?
     private var requestedModel = false
     private var monitor: Any?
@@ -109,11 +120,11 @@ import MacLayouts
             changed()
             return
         }
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.boundary?.cancel()
-                guard event.type == .keyDown else { return }
+                guard event.type == .keyDown else { self.inline.hide(); return }
                 if self.pending != nil || self.undo != nil { self.clear() }
                 guard event.keyCode == UInt16(kVK_Space),
                       event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
@@ -149,6 +160,7 @@ import MacLayouts
     }
 
     private func clear() {
+        inline.hide()
         editEnd = nil
         expiry?.cancel()
         boundary?.cancel()
@@ -193,13 +205,21 @@ import MacLayouts
         } else {
             pending = edit
             status = "Layout suggestion available"
+            if let bounds = editor.bounds(caret), let preview = edit.preview {
+                inline.show(preview, at: bounds) { [weak self] accept in
+                    guard let self, edit.preview != nil, editor.bounds(caret) == bounds else { return false }
+                    if accept { return self.accept() }
+                    self.dismiss()
+                    return true
+                }
+            }
         }
         expire()
         changed()
     }
 
-    func accept() {
-        guard let edit = pending else { return }
+    @discardableResult func accept() -> Bool {
+        guard let edit = pending else { return false }
         let end = editEnd
         clear()
         if edit.apply() {
@@ -209,7 +229,9 @@ import MacLayouts
             status = "Layout corrected · Undo available"
             expire()
             changed()
+            return true
         }
+        return false
     }
 
     func undoLast() {
