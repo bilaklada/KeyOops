@@ -29,6 +29,7 @@ codesign --verify --strict --all-architectures "$mount/KeyOops.app"
 lipo "$mount/KeyOops.app/Contents/MacOS/KeyOops" -verify_arch arm64 x86_64
 test -s "$mount/KeyOops.app/Contents/Resources/ru-lex.bin"
 test -s "$mount/KeyOops.app/Contents/Resources/en-lex.bin"
+test -s "$mount/KeyOops.app/Contents/Resources/phrases.arpa"
 test -s "$mount/KeyOops.app/Contents/Resources/Licenses/Tilqos-MIT.txt"
 test -L "$mount/Applications"
 hdiutil detach "$mount"
