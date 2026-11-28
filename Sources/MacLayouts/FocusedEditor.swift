@@ -5,6 +5,7 @@ import Carbon
 /// macOS text offsets are UTF-16 units. Keep the exact inspected range for the
 /// reply so an edit, focus change or selection change invalidates it.
 @MainActor package struct FocusedEditor: LiveTextEditor {
+    private let focusTarget: AXUIElement
     private let identity: EditorIdentity<AXUIElement>
     private var element: AXUIElement { identity.field }
     package var pid: pid_t { identity.pid }
@@ -14,36 +15,46 @@ import Carbon
 
     package func invalidate() { lifetime.valid = false }
 
-    package func sameTarget(as other: Self) -> Bool { identity == other.identity }
+    package func sameTarget(as other: Self) -> Bool { identity == other.identity && CFEqual(focusTarget, other.focusTarget) }
 
     package let bundle: String
     package let optionSpace: Bool
     private var documents: [EditorIdentity<AXUIElement>.Document] { identity.ancestry }
 
-    package static func current(checkCapabilities: Bool = true) -> Self? {
+    package static func current(checkCapabilities: Bool = true,
+                                onUnavailable: (String) -> Void = { _ in }) -> Self? {
+        func unavailable(_ reason: String) -> Self? {
+            onUnavailable(reason)
+            return nil
+        }
         guard !IsSecureEventInputEnabled(), AXIsProcessTrusted(),
               let app = NSWorkspace.shared.frontmostApplication, let bundle = app.bundleIdentifier,
-              LiveHostPolicy.enabled(bundle) else { return nil }
+              LiveHostPolicy.enabled(bundle) else { return unavailable("Protected or excluded context") }
         let application = AXUIElementCreateApplication(app.processIdentifier)
         var target = node(application, kAXFocusedUIElementAttribute)
-        if checkCapabilities, ![kAXTextAreaRole, kAXTextFieldRole].contains(target.flatMap { attribute($0, kAXRoleAttribute) as? String } ?? "") {
-            // Electron exposes this opt-in on the application object. Request
-            // its text accessibility tree only when ordinary discovery fails.
-            let name = "AXManualAccessibility" as CFString
-            var supported = DarwinBoolean(false)
-            if AXUIElementIsAttributeSettable(application, name, &supported) == .success, supported.boolValue,
-               attribute(application, "AXManualAccessibility") as? Bool != true,
-               AXUIElementSetAttributeValue(application, name, kCFBooleanTrue) == .success {
-                target = node(application, kAXFocusedUIElementAttribute)
+        if checkCapabilities, target.map({ candidate in
+            LiveHostPolicy.textControl(role: attribute(candidate, kAXRoleAttribute) as? String ?? "",
+                                       editable: attribute(candidate, "AXEditable") as? Bool)
+        }) != true {
+            // Chromium and Electron can start with a minimal Accessibility tree.
+            // Only request modes the host advertises, then query focus again.
+            for name in ["AXManualAccessibility", "AXEnhancedUserInterface"] {
+                var supported = DarwinBoolean(false)
+                guard AXUIElementIsAttributeSettable(application, name as CFString, &supported) == .success,
+                      supported.boolValue, attribute(application, name) as? Bool != true else { continue }
+                if AXUIElementSetAttributeValue(application, name as CFString, kCFBooleanTrue) == .success {
+                    target = node(application, kAXFocusedUIElementAttribute)
+                    break
+                }
             }
         }
-        guard let field = target,
-              let role = attribute(field, kAXRoleAttribute) as? String,
-              [kAXTextAreaRole, kAXTextFieldRole].contains(role),
-              let window = node(application, kAXFocusedWindowAttribute) else { return nil }
+        guard let target,
+              let window = node(application, kAXFocusedWindowAttribute) else { return unavailable("No focused text control") }
         // Walk to the focused window, including the innermost web document for
         // iframe editors. A URL alone identifies neither a tab nor a document.
-        var current = field
+        var current = target
+        var editingControl: AXUIElement?
+        var canResolveControl = true
         var documents = [EditorIdentity<AXUIElement>.Document]()
         var optionSpace = LiveHostPolicy.usesOptionSpace(bundle)
         var reachedWindow = false
@@ -58,44 +69,55 @@ import Carbon
                   values.allSatisfy(Self.availableOrUnsupported),
                   let ancestorRole = values[0] as? String,
                   !LiveHostPolicy.excludesControl(subrole: values[1] as? String, classes: values[2] as? [String] ?? []),
-                  (values[3] as? NSNumber)?.boolValue != true else { return nil }
-            if CFEqual(current, field),
-               (values[6] as? NSNumber)?.boolValue == false ||
-               (values[7] as? NSNumber)?.boolValue == false ||
-               (values[8] as? NSNumber)?.boolValue == true { return nil }
+                  (values[3] as? NSNumber)?.boolValue != true else { return unavailable("Protected or unverified control") }
+            // Resolve a focused text leaf to its nearest editing container. Stop
+            // at unrelated controls and document boundaries, while checking
+            // even the leaf and its ancestors for protected content.
+            if editingControl == nil {
+                guard canResolveControl, (values[6] as? NSNumber)?.boolValue != false,
+                      (values[7] as? NSNumber)?.boolValue != false,
+                      (values[8] as? NSNumber)?.boolValue != true else { return unavailable("Read-only or unsupported control") }
+                if LiveHostPolicy.textControl(role: ancestorRole, editable: values[7] as? Bool) {
+                    editingControl = current
+                } else {
+                    canResolveControl = ["AXStaticText", "AXGroup", "AXLayoutArea"].contains(ancestorRole)
+                }
+            }
             optionSpace = optionSpace || LiveHostPolicy.reservesTab(role: ancestorRole, classes: values[2] as? [String] ?? [])
             if ancestorRole == "AXWebArea" {
-                guard let url = values[5] as? URL else { return nil }
+                let url = values[5] as? URL ?? (values[5] as? String).flatMap(URL.init(string:))
+                // Embedded documents may omit their URL. Their live element
+                // and mandatory navigation/destruction observers still bind them.
                 documents.append(.init(area: current, url: url))
             }
             if CFEqual(current, window) { reachedWindow = true; break }
-            guard CFGetTypeID(values[4]) == AXUIElementGetTypeID() else { return nil }
+            guard CFGetTypeID(values[4]) == AXUIElementGetTypeID() else { return unavailable("Incomplete field ancestry") }
             let parent = values[4] as! AXUIElement
-            guard !CFEqual(parent, current) else { return nil }
+            guard !CFEqual(parent, current) else { return unavailable("Invalid field ancestry") }
             current = parent
         }
-        guard reachedWindow, !LiveHostPolicy.requiresWebDocument(bundle) || !documents.isEmpty else { return nil }
+        guard let field = editingControl, reachedWindow, !LiveHostPolicy.requiresWebDocument(bundle) || !documents.isEmpty else { return unavailable("Cannot identify the field and document") }
         let fieldDocument = attribute(field, kAXDocumentAttribute) as? String
         let document = fieldDocument ?? (bundle == "com.apple.Notes" ? nil : attribute(window, kAXDocumentAttribute) as? String)
         var documentMarker: CFTypeRef?
         // TextEdit creates a distinct document window even before the first save.
         if documents.isEmpty && document?.isEmpty != false && bundle != "com.apple.TextEdit" {
             guard AXUIElementCopyParameterizedAttributeValue(field, "AXTextMarkerForIndex" as CFString,
-                    0 as CFNumber, &documentMarker) == .success, documentMarker != nil else { return nil }
+                    0 as CFNumber, &documentMarker) == .success, documentMarker != nil else { return unavailable("Host lacks document identity") }
         }
         let identity = EditorIdentity(pid: app.processIdentifier, window: window, field: field,
                                       document: document, ancestry: documents)
-        let editor = Self(identity: identity, documentMarker: documentMarker, bundle: bundle, optionSpace: optionSpace)
+        let editor = Self(focusTarget: target, identity: identity, documentMarker: documentMarker, bundle: bundle, optionSpace: optionSpace)
         if checkCapabilities {
             for name in [kAXSelectedTextAttribute, kAXSelectedTextRangeAttribute] {
                 var writable = DarwinBoolean(false)
                 guard AXUIElementIsAttributeSettable(field, name as CFString, &writable) == .success,
-                      writable.boolValue else { return nil }
+                      writable.boolValue else { return unavailable("Host cannot write the selected text or range") }
             }
             guard let count = editor.characterCount, let caret = editor.selection,
-                  caret.length == 0, caret.location <= count else { return nil }
+                  caret.length == 0, caret.location <= count else { return unavailable("Host lacks a readable insertion point") }
             let probe = CFRange(location: max(0, caret.location - 1), length: caret.location == 0 ? 0 : 1)
-            guard editor.text(probe)?.utf16.count == probe.length else { return nil }
+            guard editor.text(probe)?.utf16.count == probe.length else { return unavailable("Host cannot read a bounded text range") }
         }
         return editor
     }
@@ -137,9 +159,14 @@ import Carbon
     package func text(_ range: CFRange) -> String? {
         guard let value = rangeValue(range) else { return nil }
         var text: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element,
-                kAXStringForRangeParameterizedAttribute as CFString, value, &text) == .success else { return nil }
-        return text as? String
+        let result = AXUIElementCopyParameterizedAttributeValue(element,
+                kAXStringForRangeParameterizedAttribute as CFString, value, &text)
+        if result == .success { return text as? String }
+        guard result == .attributeUnsupported || result == .parameterizedAttributeUnsupported,
+              AXUIElementCopyParameterizedAttributeValue(element,
+                kAXAttributedStringForRangeParameterizedAttribute as CFString, value, &text) == .success
+        else { return nil }
+        return (text as? NSAttributedString)?.string
     }
 
     package func bounds(_ range: CFRange) -> CGRect? {

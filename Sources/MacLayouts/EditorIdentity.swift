@@ -5,8 +5,8 @@ import Foundation
 package struct EditorIdentity<Element: Equatable>: Equatable {
     package struct Document: Equatable {
         package let area: Element
-        package let url: URL
-        package init(area: Element, url: URL) { self.area = area; self.url = url }
+        package let url: URL?
+        package init(area: Element, url: URL?) { self.area = area; self.url = url }
     }
 
     let pid: pid_t

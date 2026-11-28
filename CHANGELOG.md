@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Discover editable combo boxes, explicitly editable groups and focused text leaves across apps. Bind embedded editors to their web document even when it omits a URL. Skip recognized source editor controls.
+
 - Extend live mode to compatible single-line and multiline controls with document-scoped ownership. Preserve Tab in editors and spreadsheets. Real-host verification is tracked in [live-host acceptance](docs/live-host-acceptance.md).
 
 - Suggest mode collects contextual corrections across sentences until Tab or Esc. Automatic mode applies confident phrase readings and revisits ambiguous words as more text arrives. Live sessions are bounded and tied to one focused editor.

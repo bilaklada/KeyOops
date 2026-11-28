@@ -25,10 +25,23 @@ package enum LiveHostPolicy {
         families.contains { id == $0 || id.hasPrefix($0 + ".") }
     }
 
+    /// A role-less HTML contenteditable can appear as a group. Require an
+    /// explicit editable flag for generic containers before probing text APIs.
+    package static func textControl(role: String, editable: Bool?) -> Bool {
+        switch role {
+        case "AXTextArea", "AXTextField", "AXComboBox": return editable != false
+        case "AXGroup", "AXLayoutArea": return editable == true
+        default: return false
+        }
+    }
+
     package static func excludesControl(subrole: String?, classes: [String]) -> Bool {
-        if ["AXSecureTextField", "AXSystemDialog"].contains(subrole) { return true }
+        if ["AXSecureTextField", "AXSystemDialog", "AXSecureTextArea", "AXSourceEditor"].contains(subrole) { return true }
         // Electron IDEs may embed a terminal alongside an ordinary code editor.
-        return classes.contains { $0 == "xterm" || $0.hasPrefix("xterm-") }
+        return classes.contains {
+            $0 == "xterm" || $0.hasPrefix("xterm-") ||
+                ["monaco-editor", "CodeMirror", "cm-editor", "ace_editor"].contains($0)
+        }
     }
 
     package static func enabled(_ bundle: String?) -> Bool {

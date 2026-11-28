@@ -54,6 +54,13 @@ import KeyOopsCore
         precondition(!LiveHostPolicy.enabled(id))
     }
     precondition(!LiveHostPolicy.enabled(nil))
+    precondition(LiveHostPolicy.textControl(role: "AXComboBox", editable: nil))
+    precondition(LiveHostPolicy.textControl(role: "AXGroup", editable: true))
+    precondition(!LiveHostPolicy.textControl(role: "AXGroup", editable: nil))
+    precondition(!LiveHostPolicy.textControl(role: "AXTextArea", editable: false))
+    precondition(!LiveHostPolicy.textControl(role: "AXWebArea", editable: true))
+    precondition(LiveHostPolicy.excludesControl(subrole: nil, classes: ["monaco-editor"]))
+    precondition(LiveHostPolicy.excludesControl(subrole: "AXSourceEditor", classes: []))
     precondition(LiveHostPolicy.excludesControl(subrole: "AXSecureTextField", classes: []))
     precondition(LiveHostPolicy.excludesControl(subrole: nil, classes: ["xterm-helper-textarea"]))
     for id in ["com.microsoft.VSCode", "com.jetbrains.intellij", "com.apple.iWork.Numbers"] {
@@ -71,6 +78,9 @@ import KeyOopsCore
                   identity(path: "b"), identity(document: "another draft")] {
         precondition(identity() != other)
     }
+    let embedded = EditorIdentity<Int>.Document(area: 1, url: nil)
+    precondition(embedded != .init(area: 2, url: nil))
+    precondition(embedded != .init(area: 1, url: URL(string: "about:blank")))
     precondition(LiveHostPolicy.reservesTab(role: "AXCell", classes: []))
     precondition(!LiveHostPolicy.reservesTab(role: "AXTextArea", classes: []))
     let mixed = EditorFixture()
