@@ -39,6 +39,7 @@ import SelectionService
             item.target = self
             item.representedObject = live.actionGeneration
         }
+        if live.hasSuggestion { addAction("Copy corrected passage", #selector(copyPassage)) }
         if live.hasSuggestion && !live.canAccept {
             let row = menu.addItem(withTitle: "Preview", action: nil, keyEquivalent: "")
             row.identifier = NSUserInterfaceItemIdentifier("preview")
@@ -72,6 +73,10 @@ import SelectionService
     func menuDidClose(_ menu: NSMenu) {
         menu.items.first(where: { $0.identifier?.rawValue == "preview" })?.title = "Preview"
         menu.items.first(where: { $0.action == #selector(accept) })?.title = "Accept layout suggestion"
+    }
+
+    @objc private func copyPassage(_ sender: NSMenuItem) {
+        if sender.representedObject as? UUID == live.actionGeneration { live.copySuggestion() }
     }
 
     @objc private func accept(_ sender: NSMenuItem) {

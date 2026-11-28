@@ -55,17 +55,28 @@ import KeyOopsCore
         return true
     }
 
+    /// Copy the whole tracked passage including unchanged context and spacing.
+    public func suggestionForCopy() -> String? {
+        guard refresh(),
+              edit(automatic: false, accepting: true)?.preview != nil else { return nil }
+        return projection(accepting: true).text
+    }
+
+    private func projection(accepting: Bool) -> (text: String, language: LayoutLanguage?) {
+        var copy = passage
+        let terminated = accepting && copy.original.last.map { ".!?…".contains($0) } == true &&
+            copy.append(" ", model: model, english: english, russian: russian)
+        var text = copy.suggestedText
+        if terminated { text.removeLast() }
+        return (text, copy.language)
+    }
+
     public func edit(automatic: Bool, accepting: Bool = false) -> GuardedEdit? {
         let original = passage.original
-        var projection = passage
-        // At explicit acceptance, punctuation completes the final word even if
-        // the writer has not entered a space. Never complete a partial bare word.
-        let terminated = accepting && original.last.map { ".!?…".contains($0) } == true &&
-            projection.append(" ", model: model, english: english, russian: russian)
-        var replacement = automatic ? projection.automaticText : projection.suggestedText
-        if terminated { replacement.removeLast() }
-        guard original != replacement,
-              let language = automatic ? projection.automaticLanguage : projection.language else { return nil }
+        let result = automatic ? (text: passage.automaticText, language: passage.automaticLanguage)
+                               : projection(accepting: accepting)
+        let replacement = result.text
+        guard original != replacement, let language = result.language else { return nil }
         // Trim whole characters so an edit never splits a surrogate or combining sequence.
         var prefix = 0
         for (a, b) in zip(original, replacement) {

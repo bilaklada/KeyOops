@@ -105,6 +105,16 @@ import KeyOopsCore
         return KeyboardLayout(outputs: keys)
     }
     let en = layout("qwertyuiopasdfghjklzxcvbnm"), ru = layout("йцукенгшщзфывапролдячсмить")
+    let model = PhraseModel.bundled!
+    var observed = TypingPassage()
+    for letter in "руку " {
+        precondition(observed.append(String(letter), model: model, english: en, russian: ru))
+    }
+    precondition(observed.suggestedText == "руку ")
+    for letter in "фку ыщьу. цу all enjoy a little bit of poetry. " {
+        precondition(observed.append(String(letter), model: model, english: en, russian: ru))
+    }
+    precondition(observed.suggestedText == "here are some. we all enjoy a little bit of poetry. ")
     func session(_ editor: EditorFixture) -> EditorPassage {
         EditorPassage(editor: editor, start: 0, model: PhraseModel.bundled!, english: en, russian: ru)
     }
@@ -115,12 +125,14 @@ import KeyOopsCore
     precondition(passage.refresh())
     document.view.insertText("руку фку ыщьу. unfinished", replacementRange: document.view.selectedRange())
     precondition(passage.refresh())
+    precondition(passage.suggestionForCopy() == "we all enjoy. here are some. unfinished")
     let batch = passage.edit(automatic: false)!
     let original = document.view.string
     document.focused = false
     let other = EditorFixture()
     other.view.string = original
     other.view.setSelectedRange(document.view.selectedRange())
+    precondition(passage.suggestionForCopy() == nil)
     precondition(!passage.refresh() && !batch.apply() && other.view.string == original)
     document.focused = true
     precondition(batch.apply() && document.view.string == "we all enjoy. here are some. unfinished")

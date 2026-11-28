@@ -17,6 +17,13 @@ import MacLayouts
     private var observer: AXObserver?
     private var owner: FocusedEditor?
     private var session: EditorPassage?
+    private var typedPassage = TypingPassage()
+    private var typedLayouts: (english: KeyboardLayout, russian: KeyboardLayout)?
+    private var typedSuggestion: String? {
+        guard owner?.needsTypedContext == true, typedPassage.language != nil else { return nil }
+        let suggestion = typedPassage.suggestedText
+        return suggestion != typedPassage.original ? suggestion : nil
+    }
     private var pending: GuardedEdit?
     private var undo: GuardedEdit?
     private var switchedLayout = false
@@ -26,10 +33,11 @@ import MacLayouts
     private var fieldIssue: String?
     private var menuState = ""
     private(set) var actionGeneration = UUID()
-    var hasSuggestion: Bool { pending != nil }
+    var hasSuggestion: Bool { pending != nil || typedSuggestion != nil }
     var canAccept: Bool { hasSuggestion && owner?.canReplace == true }
     var canUndo: Bool { undo != nil }
     var suggestionPreview: String? {
+        if let typedSuggestion { return owner?.focused == true ? typedSuggestion : nil }
         guard session?.refresh() == true else { return nil }
         return session?.edit(automatic: false, accepting: true)?.preview
     }
@@ -89,7 +97,6 @@ import MacLayouts
                 updateStatus()
                 return
             }
-            guard let caret = editor.selection, caret.length == 0 else { return }
             guard observeFocus(editor) else {
                 fieldIssue = "Last field: missing focus or document notifications"
                 updateStatus()
@@ -101,6 +108,12 @@ import MacLayouts
             guard editor.focused else { resetContext(); return }
             // A global monitor may run just before or after the host inserts the key.
             // Include the current word only, never earlier completed sentences.
+            if editor.needsTypedContext {
+                typedLayouts = try? SystemLayouts.pair()
+                receiveTyped(event, editor: editor)
+                return
+            }
+            guard let caret = editor.selection, caret.length == 0 else { resetContext(); return }
             let n = min(CompletedWord.maximumUTF16Length, caret.location)
             let suffix = editor.text(CFRange(location: caret.location - n, length: n)) ?? ""
             var fragment = suffix[...]
@@ -110,6 +123,7 @@ import MacLayouts
             let word = fragment.reversed().prefix { !$0.isWhitespace }
             floor = caret.location - (suffix.utf16.count - fragment.utf16.count) - String(word.reversed()).utf16.count
         }
+        if let owner, owner.needsTypedContext { receiveTyped(event, editor: owner); return }
         if undo != nil { undo = nil; switchedLayout = false; updateStatus() }
         // Coalesce fast typing without postponing analysis indefinitely. The host
         // supplies committed text; a partially typed last word remains verbatim.
@@ -125,6 +139,28 @@ import MacLayouts
             self.inspect()
             if self.inline.panelVisible { self.timings.emitEvent("Preview visible", id: traceID) }
         }
+    }
+
+    private func receiveTyped(_ event: NSEvent, editor: FocusedEditor) {
+        // Only consult event text after checking the owning field and secure state.
+        let target = event.cgEvent?.getIntegerValueField(.eventTargetUnixProcessID) ?? 0
+        guard (target == 0 || target == Int64(editor.pid)), editor.focused, editor.selection.map({ $0.length == 0 }) != false,
+              let model, let typedLayouts, let text = event.characters, text.count == 1,
+              !text.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0) || (0xF700...0xF8FF).contains($0.value)
+              }),
+              typedPassage.append(text, model: model, english: typedLayouts.english, russian: typedLayouts.russian)
+        else { resetContext(); return }
+        updateStatus()
+    }
+
+    @discardableResult func copySuggestion() -> Bool {
+        guard let owner, owner.focused else { resetContext(); return false }
+        let suggestion = owner.needsTypedContext ? typedSuggestion : session?.suggestionForCopy()
+        guard let suggestion, owner.focused else { return false }
+        let board = NSPasteboard.general
+        board.clearContents()
+        return board.setString(suggestion, forType: .string)
     }
 
     private func observeFocus(_ editor: FocusedEditor) -> Bool {
@@ -156,6 +192,8 @@ import MacLayouts
         inline.hide()
         boundary?.cancel()
         boundary = nil
+        typedPassage = TypingPassage()
+        typedLayouts = nil
         session = nil
         pending = nil
         undo = nil
@@ -176,7 +214,7 @@ import MacLayouts
     }
 
     private func inspect() {
-        guard mode != .off, let owner, let model else { return }
+        guard mode != .off, let owner, !owner.needsTypedContext, let model else { return }
         guard owner.focused else { resetContext(); return }
         if session == nil {
             guard let pair = try? SystemLayouts.pair() else { return }
@@ -204,6 +242,7 @@ import MacLayouts
     }
 
     @discardableResult func dismiss() -> Bool {
+        if owner?.needsTypedContext == true { resetContext(); return true }
         guard pending != nil, let session, session.refresh() else { resetContext(); return false }
         floor = session.end
         clearEdits()

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Copy an entire corrected passage from the menu. Identifiable fields without readable ranges can now show contextual suggestions from uninterrupted typing.
+
 - Show preview-only suggestions in recognized source editors and readable, verified typing fields that cannot replace a selection.
 
 - Discover editable combo boxes, explicitly editable groups and focused text leaves across apps. Bind embedded editors to their web document even when it omits a URL. Skip recognized source editor controls.

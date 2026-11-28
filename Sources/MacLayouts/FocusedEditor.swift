@@ -18,6 +18,7 @@ import Carbon
     package func sameTarget(as other: Self) -> Bool { identity == other.identity && CFEqual(focusTarget, other.focusTarget) }
 
     package let bundle: String
+    package private(set) var needsTypedContext = false
     package private(set) var canReplace = false
     private let restrictedEditor: Bool
     package let optionSpace: Bool
@@ -148,10 +149,14 @@ import Carbon
                 var writable = DarwinBoolean(false)
                 return AXUIElementIsAttributeSettable(field, name as CFString, &writable) == .success && writable.boolValue
             }
-            guard let count = editor.characterCount, let caret = editor.selection,
-                  caret.length == 0, caret.location <= count else { return unavailable("Host lacks a readable insertion point") }
-            let probe = CFRange(location: max(0, caret.location - 1), length: caret.location == 0 ? 0 : 1)
-            guard editor.text(probe)?.utf16.count == probe.length else { return unavailable("Host cannot read a bounded text range") }
+            if let caret = editor.selection, caret.length != 0 { return unavailable("Text is selected") }
+            if let count = editor.characterCount, let caret = editor.selection, caret.location <= count {
+                let probe = CFRange(location: max(0, caret.location - 1), length: caret.location == 0 ? 0 : 1)
+                editor.needsTypedContext = editor.text(probe)?.utf16.count != probe.length
+            } else {
+                editor.needsTypedContext = true
+            }
+            if editor.needsTypedContext { editor.canReplace = false }
         }
         return editor
     }
