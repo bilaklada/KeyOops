@@ -1,6 +1,6 @@
 # 002 · Contextual live correction
 
-Live mode uses Accessibility to read committed text from a focused writable single-line or multiline text control. Keyboard events trigger checks without decoding the typed characters. A 24 ms coalescing interval gives the host time to insert text. The model and dictionaries load away from the main thread.
+Live mode uses Accessibility to read committed text from a focused writable single-line or multiline text control. On the committed-text path, keyboard events trigger checks without decoding typed characters. If a verified field lacks readable ranges or a caret, a preview-only path feeds printable key events into a bounded TypingPassage while the same field and document remain focused. It never writes into the host. Choosing Copy corrected passage explicitly exports the tracked projection to the general pasteboard. A 24 ms coalescing interval gives the host time to insert text. The model and dictionaries load away from the main thread.
 
 On whitespace, the decoder compares the typed and physical-key readings of each word. A forward and backward pass computes the best complete sequence under each reading at each position. The difference is the confidence margin. Scores combine bilingual KenLM probabilities, dictionary evidence, and a layout-state prior trained on simulated slips. Automatic mode commits high-margin words and keeps unresolved neighbors available for later evidence. Unseen target names can accompany a supported run for review.
 
