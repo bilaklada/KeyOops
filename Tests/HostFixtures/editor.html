@@ -20,7 +20,7 @@ for (const id of ["single", "multi", "rich", "plainRich", "combo"]) {
   else field.value = sample;
 }
 const field = document.getElementById(location.hash.slice(1)) || document.getElementById("single");
-window.addEventListener("pageshow", () => requestAnimationFrame(() => {
+window.addEventListener("pageshow", () => {
   field.focus();
   if (field.isContentEditable) {
     const range = document.createRange();
@@ -29,6 +29,9 @@ window.addEventListener("pageshow", () => requestAnimationFrame(() => {
     getSelection().removeAllRanges();
     getSelection().addRange(range);
   } else field.setSelectionRange(sample.length, sample.length);
-  document.documentElement.dataset.ready = "yes";
-}));
+  const caret = field.isContentEditable ? getSelection().focusOffset : field.selectionEnd;
+  if (document.activeElement === field && caret === sample.length) {
+    document.documentElement.dataset.ready = "yes";
+  }
+});
 </script>
