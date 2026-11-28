@@ -61,15 +61,46 @@ import Carbon
         // One IPC per ancestor. Deep web trees otherwise multiply the cost
         // of each focus check by the number of security/identity attributes.
         let names = [kAXRoleAttribute, kAXSubroleAttribute, "AXDOMClassList", "AXProtectedContent",
-                     kAXParentAttribute, kAXURLAttribute, kAXEnabledAttribute, "AXEditable", "AXReadOnly"] as CFArray
+                     kAXParentAttribute, kAXURLAttribute, kAXEnabledAttribute, "AXEditable", "AXReadOnly"]
         for _ in 0..<64 {
             var raw: CFArray?
-            guard AXUIElementCopyMultipleAttributeValues(current, names, [], &raw) == .success,
-                  let values = raw as? [AnyObject], values.count == 9,
-                  values.allSatisfy(Self.availableOrUnsupported),
-                  let ancestorRole = values[0] as? String,
-                  !LiveHostPolicy.excludesControl(subrole: values[1] as? String, classes: values[2] as? [String] ?? []),
-                  (values[3] as? NSNumber)?.boolValue != true else { return unavailable("Protected or unverified control") }
+            let batch = AXUIElementCopyMultipleAttributeValues(current, names as CFArray, [], &raw)
+            let values: [AnyObject]
+            if batch == .success, let items = raw as? [AnyObject], items.count == names.count,
+               items.allSatisfy(Self.availableOrUnsupported) {
+                values = items
+            } else {
+                // Some accessibility bridges implement individual reads but
+                // cannot return all metadata through the batch operation.
+                guard batch == .success || batch == .notImplemented || batch == .attributeUnsupported ||
+                      batch == .illegalArgument else { return unavailable("Field metadata unavailable (\(batch.rawValue))") }
+                var items = [AnyObject]()
+                for (index, name) in names.enumerated() {
+                    if batch == .success, let cached = raw as? [AnyObject], cached.count == names.count,
+                       Self.availableOrUnsupported(cached[index]) {
+                        items.append(cached[index])
+                        continue
+                    }
+                    var value: CFTypeRef?
+                    let result = AXUIElementCopyAttributeValue(current, name as CFString, &value)
+                    if result == .success, let value {
+                        items.append(value)
+                    } else if result == .attributeUnsupported || result == .noValue {
+                        items.append(NSNull())
+                    } else {
+                        return unavailable("Cannot verify \(name) (\(result.rawValue))")
+                    }
+                }
+                values = items
+            }
+            guard let ancestorRole = values[0] as? String else { return unavailable("Missing accessibility role") }
+            guard (values[3] as? NSNumber)?.boolValue != true else { return unavailable("Host marks content protected") }
+            guard !LiveHostPolicy.excludesControl(subrole: values[1] as? String, classes: []) else {
+                return unavailable("Excluded secure, system or source control")
+            }
+            guard !LiveHostPolicy.excludesControl(subrole: nil, classes: values[2] as? [String] ?? []) else {
+                return unavailable("Inside a terminal or source editor")
+            }
             // Resolve a focused text leaf to its nearest editing container. Stop
             // at unrelated controls and document boundaries, while checking
             // even the leaf and its ancestors for protected content.
