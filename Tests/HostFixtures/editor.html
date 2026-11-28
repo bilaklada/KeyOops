@@ -3,20 +3,23 @@
 <style>[contenteditable] { white-space: pre-wrap; border: 1px solid gray; padding: 6px }</style>
 <title>KeyOops local acceptance fixture</title>
 <h1>KeyOops local acceptance fixture</h1>
-<p>All three editors start with identical text. Nothing here submits or saves any input.</p>
+<p>The editable examples start with identical text. Nothing here submits or saves any input.</p>
 <label>Single line <input id="single"></label>
 <label>Multiline <textarea id="multi"></textarea></label>
 <div id="rich" role="textbox" aria-label="Rich text" contenteditable="true"></div>
+<div id="plainRich" aria-label="Compose" contenteditable="true"></div>
+<label>Editable combo box <input id="combo" role="combobox" aria-expanded="false" aria-controls="choices"></label>
+<div id="choices" role="listbox" hidden></div>
 <label>Secure field <input type="password" autocomplete="off"></label>
 <p><a href="?document=2">Navigate within this tab</a> · <a href="" target="_blank">Open an identical tab</a></p>
 <script>
 const sample = "KeyOops QA. цу all enjoy a little bit of poetry. руку фку ыщьу ща еру иуые сдфыышсфд зщуекн. цу all enjoy. ";
-for (const id of ["single", "multi", "rich"]) {
+for (const id of ["single", "multi", "rich", "plainRich", "combo"]) {
   const field = document.getElementById(id);
   if (field.isContentEditable) field.textContent = sample;
   else field.value = sample;
 }
-const field = document.querySelector(location.hash === "#rich" ? "#rich" : location.hash === "#multi" ? "#multi" : "#single");
+const field = document.getElementById(location.hash.slice(1)) || document.getElementById("single");
 window.addEventListener("pageshow", () => requestAnimationFrame(() => {
   field.focus();
   if (field.isContentEditable) {

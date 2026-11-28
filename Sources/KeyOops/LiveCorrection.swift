@@ -23,6 +23,7 @@ import MacLayouts
     private var boundary: Task<Void, Never>?
     private let timings = OSSignposter(subsystem: "KeyOops", category: "LivePreview")
     private var floor = 0
+    private var fieldIssue: String?
     private var menuState = ""
     private(set) var actionGeneration = UUID()
     var canAccept: Bool { pending != nil }
@@ -44,6 +45,7 @@ import MacLayouts
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         mode = .off
+        fieldIssue = nil
         resetContext()
         guard next != .off else { return }
         guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": prompt] as CFDictionary),
@@ -82,8 +84,18 @@ import MacLayouts
         // AX focus notifications discard the binding; inspect and shortcut
         // actions also check it synchronously before accessing retained text.
         if owner == nil {
-            guard let editor = FocusedEditor.current(), let caret = editor.selection, caret.length == 0,
-                  observeFocus(editor) else { return }
+            guard let editor = FocusedEditor.current(onUnavailable: { self.fieldIssue = "Last field: " + $0 }) else {
+                updateStatus()
+                return
+            }
+            guard let caret = editor.selection, caret.length == 0 else { return }
+            guard observeFocus(editor) else {
+                fieldIssue = "Last field: missing focus or document notifications"
+                updateStatus()
+                return
+            }
+            fieldIssue = nil
+            updateStatus()
             owner = editor
             guard editor.focused else { resetContext(); return }
             // A global monitor may run just before or after the host inserts the key.
@@ -153,7 +165,7 @@ import MacLayouts
     private func updateStatus() {
         status = pending != nil ? (session?.full == true ? "Review accumulated corrections to continue" : "Layout suggestion available")
             : undo != nil ? "Layout corrected · Undo available"
-            : mode == .off ? "Selected text only" : "\(mode.rawValue) · Compatible text fields"
+            : mode == .off ? "Selected text only" : "\(mode.rawValue) · \(fieldIssue ?? "Compatible text fields")"
         let state = "\(mode.rawValue)|\(status)|\(canUndo)"
         if state != menuState {
             menuState = state
