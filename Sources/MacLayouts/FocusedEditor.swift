@@ -18,6 +18,8 @@ import Carbon
     package func sameTarget(as other: Self) -> Bool { identity == other.identity && CFEqual(focusTarget, other.focusTarget) }
 
     package let bundle: String
+    package private(set) var canReplace = false
+    private let restrictedEditor: Bool
     package let optionSpace: Bool
     private var documents: [EditorIdentity<AXUIElement>.Document] { identity.ancestry }
 
@@ -57,6 +59,7 @@ import Carbon
         var canResolveControl = true
         var documents = [EditorIdentity<AXUIElement>.Document]()
         var optionSpace = LiveHostPolicy.usesOptionSpace(bundle)
+        var restrictedEditor = false
         var reachedWindow = false
         // One IPC per ancestor. Deep web trees otherwise multiply the cost
         // of each focus check by the number of security/identity attributes.
@@ -96,10 +99,10 @@ import Carbon
             guard let ancestorRole = values[0] as? String else { return unavailable("Missing accessibility role") }
             guard (values[3] as? NSNumber)?.boolValue != true else { return unavailable("Host marks content protected") }
             guard !LiveHostPolicy.excludesControl(subrole: values[1] as? String, classes: []) else {
-                return unavailable("Excluded secure, system or source control")
+                return unavailable("Excluded secure or system control")
             }
             guard !LiveHostPolicy.excludesControl(subrole: nil, classes: values[2] as? [String] ?? []) else {
-                return unavailable("Inside a terminal or source editor")
+                return unavailable("Inside a terminal")
             }
             // Resolve a focused text leaf to its nearest editing container. Stop
             // at unrelated controls and document boundaries, while checking
@@ -114,6 +117,7 @@ import Carbon
                     canResolveControl = ["AXStaticText", "AXGroup", "AXLayoutArea"].contains(ancestorRole)
                 }
             }
+            restrictedEditor = restrictedEditor || LiveHostPolicy.previewOnly(subrole: values[1] as? String, classes: values[2] as? [String] ?? [])
             optionSpace = optionSpace || LiveHostPolicy.reservesTab(role: ancestorRole, classes: values[2] as? [String] ?? [])
             if ancestorRole == "AXWebArea" {
                 let url = values[5] as? URL ?? (values[5] as? String).flatMap(URL.init(string:))
@@ -138,12 +142,11 @@ import Carbon
         }
         let identity = EditorIdentity(pid: app.processIdentifier, window: window, field: field,
                                       document: document, ancestry: documents)
-        let editor = Self(focusTarget: target, identity: identity, documentMarker: documentMarker, bundle: bundle, optionSpace: optionSpace)
+        var editor = Self(focusTarget: target, identity: identity, documentMarker: documentMarker, bundle: bundle, restrictedEditor: restrictedEditor, optionSpace: optionSpace)
         if checkCapabilities {
-            for name in [kAXSelectedTextAttribute, kAXSelectedTextRangeAttribute] {
+            editor.canReplace = !restrictedEditor && [kAXSelectedTextAttribute, kAXSelectedTextRangeAttribute].allSatisfy { name in
                 var writable = DarwinBoolean(false)
-                guard AXUIElementIsAttributeSettable(field, name as CFString, &writable) == .success,
-                      writable.boolValue else { return unavailable("Host cannot write the selected text or range") }
+                return AXUIElementIsAttributeSettable(field, name as CFString, &writable) == .success && writable.boolValue
             }
             guard let count = editor.characterCount, let caret = editor.selection,
                   caret.length == 0, caret.location <= count else { return unavailable("Host lacks a readable insertion point") }
@@ -211,12 +214,12 @@ import Carbon
     }
 
     package func select(_ range: CFRange) -> Bool {
-        guard focused, let value = rangeValue(range) else { return false }
+        guard canReplace, focused, let value = rangeValue(range) else { return false }
         return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
     }
 
     package func replaceSelection(with text: String) -> Bool {
-        focused && AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
+        canReplace && focused && AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString) == .success
     }
 
     /// Attach the same lifetime notifications in the app and the real-host verifier.
@@ -235,7 +238,7 @@ import Carbon
 
     package var focused: Bool {
         guard lifetime.valid, let current = Self.current(checkCapabilities: false),
-              sameTarget(as: current), optionSpace == current.optionSpace else { invalidate(); return false }
+              sameTarget(as: current), restrictedEditor == current.restrictedEditor, optionSpace == current.optionSpace else { invalidate(); return false }
         guard let documentMarker else { return true }
         var index: CFTypeRef?
         let valid = AXUIElementCopyParameterizedAttributeValue(current.element, "AXIndexForTextMarker" as CFString,

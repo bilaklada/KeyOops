@@ -26,7 +26,7 @@ import SelectionService
     private func refresh() {
         let menu = NSMenu()
         menu.delegate = self
-        item?.button?.title = live.canAccept ? "KeyOops · Suggestion" : "KeyOops"
+        item?.button?.title = live.hasSuggestion ? "KeyOops · Suggestion" : "KeyOops"
         menu.addItem(withTitle: live.status, action: nil, keyEquivalent: "")
         for mode in LiveCorrection.Mode.allCases {
             let row = menu.addItem(withTitle: mode.rawValue, action: #selector(changeMode(_:)), keyEquivalent: "")
@@ -38,6 +38,11 @@ import SelectionService
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
             item.target = self
             item.representedObject = live.actionGeneration
+        }
+        if live.hasSuggestion && !live.canAccept {
+            let row = menu.addItem(withTitle: "Preview", action: nil, keyEquivalent: "")
+            row.identifier = NSUserInterfaceItemIdentifier("preview")
+            addAction("Dismiss", #selector(dismiss))
         }
         if live.canAccept {
             addAction("Accept layout suggestion", #selector(accept))
@@ -52,6 +57,9 @@ import SelectionService
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if let preview = menu.items.first(where: { $0.identifier?.rawValue == "preview" }) {
+            preview.title = live.suggestionPreview.map { "Suggestion: " + $0 } ?? "Suggestion expired"
+        }
         guard let row = menu.items.first(where: { $0.action == #selector(accept) }) else { return }
         if let candidate = live.suggestionPreview {
             row.title = "Accept “" + candidate + "”"
@@ -62,6 +70,7 @@ import SelectionService
     }
 
     func menuDidClose(_ menu: NSMenu) {
+        menu.items.first(where: { $0.identifier?.rawValue == "preview" })?.title = "Preview"
         menu.items.first(where: { $0.action == #selector(accept) })?.title = "Accept layout suggestion"
     }
 

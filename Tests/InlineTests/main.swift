@@ -36,6 +36,15 @@ import Carbon
         overlay.hide()
         precondition(!panel.isVisible)
     }
+    let caret = CGRect(x: visible.midX, y: screen.frame.maxY - visible.midY, width: 1, height: 18)
+    overlay.show("hello", at: caret, optionSpace: true, previewOnly: true) { _ in
+        fatalError("Display-only previews must never invoke an edit")
+    }
+    precondition(overlay.panelVisible)
+    let panel = NSApp.windows.first { $0 is NSPanel && $0.isVisible }
+    let label = panel?.contentView?.subviews.compactMap { $0 as? NSTextField }.first
+    precondition(label?.stringValue == "hello    Preview only")
+    overlay.hide()
     print("Nonactivating preview placement and dismissal passed.")
 }
 MainActor.assumeIsolated {

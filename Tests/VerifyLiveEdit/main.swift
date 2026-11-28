@@ -59,8 +59,9 @@ import KeyOopsCore
     precondition(!LiveHostPolicy.textControl(role: "AXGroup", editable: nil))
     precondition(!LiveHostPolicy.textControl(role: "AXTextArea", editable: false))
     precondition(!LiveHostPolicy.textControl(role: "AXWebArea", editable: true))
-    precondition(LiveHostPolicy.excludesControl(subrole: nil, classes: ["monaco-editor"]))
-    precondition(LiveHostPolicy.excludesControl(subrole: "AXSourceEditor", classes: []))
+    precondition(!LiveHostPolicy.excludesControl(subrole: nil, classes: ["monaco-editor"]))
+    precondition(LiveHostPolicy.previewOnly(subrole: nil, classes: ["monaco-editor"]))
+    precondition(LiveHostPolicy.previewOnly(subrole: "AXSourceEditor", classes: []))
     precondition(LiveHostPolicy.excludesControl(subrole: "AXSecureTextField", classes: []))
     precondition(LiveHostPolicy.excludesControl(subrole: nil, classes: ["xterm-helper-textarea"]))
     for id in ["com.microsoft.VSCode", "com.jetbrains.intellij", "com.apple.iWork.Numbers"] {

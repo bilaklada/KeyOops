@@ -9,6 +9,7 @@ import Carbon
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     fileprivate var optionSpace = false
+    private var previewOnly = false
     fileprivate var handle: ((Bool) -> Bool)?
 
     init() {
@@ -48,10 +49,16 @@ import Carbon
         return accept ? true : nil
     }
 
-    func show(_ preview: String, at bounds: CGRect, optionSpace: Bool, handle: @escaping (Bool) -> Bool) {
+    func show(_ preview: String, at bounds: CGRect, optionSpace: Bool, previewOnly: Bool = false, handle: @escaping (Bool) -> Bool) {
         guard let primary = NSScreen.screens.first else { hide(); return }
         let anchor = CGPoint(x: bounds.minX, y: primary.frame.maxY - bounds.maxY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(anchor) }) else { hide(); return }
+        self.previewOnly = previewOnly
+        if previewOnly {
+            hide()
+            display(preview, anchor: anchor, caretHeight: bounds.height, screen: screen)
+            return
+        }
         self.optionSpace = optionSpace
         self.handle = handle
         if tap != nil {
@@ -70,7 +77,7 @@ import Carbon
 
     func display(_ preview: String, anchor: CGPoint, caretHeight: CGFloat, screen: NSScreen) {
         let excerpt = preview.count > 180 ? String(preview.prefix(85)) + " … " + String(preview.suffix(85)) : preview
-        label.stringValue = excerpt + (optionSpace ? "    ⌥Space   ·   Esc" : "    ⇥ Tab   ·   Esc")
+        label.stringValue = excerpt + (previewOnly ? "    Preview only" : optionSpace ? "    ⌥Space   ·   Esc" : "    ⇥ Tab   ·   Esc")
         let visible = screen.visibleFrame
         let width = min(visible.width - 20, min(460, ceil(label.attributedStringValue.size().width) + 8))
         guard let cell = label.cell else { hide(); return }

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show preview-only suggestions in recognized source editors and readable, verified typing fields that cannot replace a selection.
+
 - Discover editable combo boxes, explicitly editable groups and focused text leaves across apps. Bind embedded editors to their web document even when it omits a URL. Skip recognized source editor controls.
 
 - Extend live mode to compatible single-line and multiline controls with document-scoped ownership. Preserve Tab in editors and spreadsheets. Real-host verification is tracked in [live-host acceptance](docs/live-host-acceptance.md).

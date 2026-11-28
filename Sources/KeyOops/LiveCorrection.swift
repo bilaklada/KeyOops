@@ -26,7 +26,8 @@ import MacLayouts
     private var fieldIssue: String?
     private var menuState = ""
     private(set) var actionGeneration = UUID()
-    var canAccept: Bool { pending != nil }
+    var hasSuggestion: Bool { pending != nil }
+    var canAccept: Bool { hasSuggestion && owner?.canReplace == true }
     var canUndo: Bool { undo != nil }
     var suggestionPreview: String? {
         guard session?.refresh() == true else { return nil }
@@ -94,7 +95,7 @@ import MacLayouts
                 updateStatus()
                 return
             }
-            fieldIssue = nil
+            fieldIssue = editor.canReplace ? nil : "Suggestions only in this field"
             updateStatus()
             owner = editor
             guard editor.focused else { resetContext(); return }
@@ -163,7 +164,8 @@ import MacLayouts
     }
 
     private func updateStatus() {
-        status = pending != nil ? (session?.full == true ? "Review accumulated corrections to continue" : "Layout suggestion available")
+        status = hasSuggestion && !canAccept ? "Layout suggestion · Preview only"
+            : pending != nil ? (session?.full == true ? "Review accumulated corrections to continue" : "Layout suggestion available")
             : undo != nil ? "Layout corrected · Undo available"
             : mode == .off ? "Selected text only" : "\(mode.rawValue) · \(fieldIssue ?? "Compatible text fields")"
         let state = "\(mode.rawValue)|\(status)|\(canUndo)"
@@ -181,7 +183,7 @@ import MacLayouts
             session = EditorPassage(editor: owner, start: floor, model: model, english: pair.english, russian: pair.russian)
         }
         guard let session, session.refresh() else { resetContext(); return }
-        if mode == .automatic, let edit = session.edit(automatic: true) {
+        if mode == .automatic, owner.canReplace, let edit = session.edit(automatic: true) {
             guard edit.apply() else { resetContext(); return }
             switchedLayout = SystemLayouts.switchAfterCorrection(from: edit.language)
             undo = edit.reversed
@@ -190,7 +192,7 @@ import MacLayouts
         let hadPending = pending != nil
         pending = session.edit(automatic: false, accepting: true)
         if let pending, let preview = pending.preview, let caret = owner.selection, let bounds = owner.bounds(caret) {
-            inline.show(preview, at: bounds, optionSpace: owner.optionSpace) { [weak self] accept in
+            inline.show(preview, at: bounds, optionSpace: owner.optionSpace, previewOnly: !owner.canReplace) { [weak self] accept in
                 guard let self, self.session === session, owner.focused else { return false }
                 return accept ? self.accept() : self.dismiss()
             }
@@ -209,7 +211,7 @@ import MacLayouts
     }
 
     @discardableResult func accept() -> Bool {
-        guard pending != nil, let session, session.refresh(),
+        guard canAccept, let session, session.refresh(),
               let edit = session.edit(automatic: false, accepting: true), edit.apply() else { resetContext(); return false }
         floor = owner?.selection?.location ?? session.end
         clearEdits()

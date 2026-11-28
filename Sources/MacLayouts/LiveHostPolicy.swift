@@ -36,12 +36,16 @@ package enum LiveHostPolicy {
     }
 
     package static func excludesControl(subrole: String?, classes: [String]) -> Bool {
-        if ["AXSecureTextField", "AXSystemDialog", "AXSecureTextArea", "AXSourceEditor"].contains(subrole) { return true }
+        if ["AXSecureTextField", "AXSystemDialog", "AXSecureTextArea"].contains(subrole) { return true }
         // Electron IDEs may embed a terminal alongside an ordinary code editor.
         return classes.contains {
-            $0 == "xterm" || $0.hasPrefix("xterm-") ||
-                ["monaco-editor", "CodeMirror", "cm-editor", "ace_editor"].contains($0)
+            $0 == "xterm" || $0.hasPrefix("xterm-")
         }
+    }
+
+    package static func previewOnly(subrole: String?, classes: [String]) -> Bool {
+        subrole == "AXSourceEditor" ||
+            classes.contains { ["monaco-editor", "CodeMirror", "cm-editor", "ace_editor"].contains($0) }
     }
 
     package static func enabled(_ bundle: String?) -> Bool {
